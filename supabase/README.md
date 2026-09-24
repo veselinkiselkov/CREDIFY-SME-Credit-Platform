@@ -38,16 +38,29 @@ In **Project Settings**:
 | Where | What to copy | Goes into |
 |---|---|---|
 | **Data API** → Project URL | `https://<project-ref>.supabase.co` | `SUPABASE_URL` |
-| **API Keys** → `service_role` (click **Reveal**) | the long `eyJ...` string | `SUPABASE_SERVICE_ROLE_KEY` |
+| **API Keys** → **Publishable and secret API keys** → create or reveal a **secret** key | the `sb_secret_…` string | `SUPABASE_SECRET_KEY` |
 
-Take the **`service_role`** key, not the `anon` / publishable one.
+Supabase issues two kinds of key, and the difference is the whole security question:
+
+| Key | Prefix | Replaces | Where it may go |
+|---|---|---|---|
+| Publishable | `sb_publishable_…` | the old `anon` key | safe in a browser — RLS still gates every query |
+| **Secret** | `sb_secret_…` | the old `service_role` key | **server only** — it carries Postgres `BYPASSRLS` and skips every policy |
+
+Take the **secret** key. Credify needs no publishable key at all, because the browser never
+talks to Supabase.
 
 > **This key bypasses every database rule.** It is a database password. Never commit it,
-> never paste it into client-side code or a chat window. If it leaks, rotate it in the
-> dashboard — the old one stops working immediately.
+> never paste it into client-side code or a chat window. If it leaks, revoke it in the
+> dashboard and create a new one.
 >
 > Why Credify uses it at all, and why that is safe here, is explained at the top of
 > [`src/lib/supabase/server.ts`](../src/lib/supabase/server.ts).
+
+**If your project still shows only the legacy `anon` / `service_role` keys**, the old
+`service_role` JWT (a long `eyJ…` string) works in `SUPABASE_SECRET_KEY` exactly the same
+way — nothing in the code inspects the format. Supabase is deprecating those legacy keys,
+so create a secret key when the option is there.
 
 ## 4. Put them in your local environment
 
@@ -74,7 +87,7 @@ Vercel does not read `.env.local`; it has its own store.
 1. Vercel dashboard → your project → **Settings** → **Environment Variables**.
 2. Add both, ticking **Production**, **Preview** and **Development**:
    - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_ROLE_KEY` — mark this one **Sensitive** so it cannot be read back
+   - `SUPABASE_SECRET_KEY` — mark this one **Sensitive** so it cannot be read back
      out of the dashboard.
 3. **Redeploy.** Environment variables are baked in at build time, so an existing
    deployment will not pick them up on its own.

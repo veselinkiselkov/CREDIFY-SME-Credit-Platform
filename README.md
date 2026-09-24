@@ -102,9 +102,12 @@ supabase/
 - **The browser never talks to Supabase.** There is no login, so any Row Level Security
   policy loose enough to let an anonymous applicant read their own application would also
   let anyone read everyone's. Instead RLS is switched on with **no policies at all**, which
-  refuses every public key, and the server holds the one key that bypasses it. Every query
-  is therefore code in this repository. `src/lib/supabase/server.ts` is marked
-  `server-only`, so a build **fails** if that file is ever pulled into the browser bundle.
+  refuses every public key, and the server holds the one key that bypasses it — Supabase's
+  **secret** key (`sb_secret_…`, the replacement for the deprecated `service_role` key), in
+  `SUPABASE_SECRET_KEY`. There is deliberately **no publishable key** anywhere in the
+  project, because nothing in the browser needs one. Every query is therefore code in this
+  repository, and `src/lib/supabase/server.ts` is marked `server-only`, so a build **fails**
+  if that file is ever pulled into the browser bundle.
 - **Two identifiers, two jobs.** `reference` (`CR-2026-7K4QP2`) is short, readable and
   quotable — and grants nothing. `access_token` is a random UUID and is the only way to
   open an application's status page. Quoting a reference in an email therefore does not

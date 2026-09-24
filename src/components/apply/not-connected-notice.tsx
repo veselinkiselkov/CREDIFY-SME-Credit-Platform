@@ -1,7 +1,7 @@
 import { Container } from "@/components/layout/container";
 
 /**
- * Shown when SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are missing.
+ * Shown when SUPABASE_URL / SUPABASE_SECRET_KEY are missing.
  *
  * Without this, a deployment with no database configured would throw on a server component
  * and render a blank error page. An honest "not connected yet" panel is better for a demo,
@@ -21,7 +21,7 @@ export function NotConnectedNotice() {
       </p>
       <p className="mt-4 leading-relaxed text-muted-foreground">
         If this is your deployment: add <code className="rounded bg-muted px-1.5 py-0.5 text-sm">SUPABASE_URL</code> and{" "}
-        <code className="rounded bg-muted px-1.5 py-0.5 text-sm">SUPABASE_SERVICE_ROLE_KEY</code>, then redeploy. The
+        <code className="rounded bg-muted px-1.5 py-0.5 text-sm">SUPABASE_SECRET_KEY</code>, then redeploy. The
         steps are in <code className="rounded bg-muted px-1.5 py-0.5 text-sm">supabase/README.md</code>.
       </p>
     </Container>

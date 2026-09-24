@@ -40,7 +40,7 @@ export async function submitApplication(values: unknown): Promise<SubmitApplicat
       return {
         formError:
           "The application database is not connected yet, so nothing was saved. " +
-          "If you are running Credify locally, add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY " +
+          "If you are running Credify locally, add SUPABASE_URL and SUPABASE_SECRET_KEY " +
           "to .env.local and restart the dev server.",
       };
     }

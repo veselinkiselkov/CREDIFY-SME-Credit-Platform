@@ -129,21 +129,22 @@ create trigger applications_set_updated_at
 -- Switched ON with NO policies, which means: every Supabase API key is refused, for every
 -- row, for reads and writes alike. Nothing can query this table through the public API.
 --
--- That is intentional and is the whole security model. The `service_role` key bypasses RLS
--- by design, and that key exists in exactly one place: the Credify server process (see
--- src/lib/supabase/server.ts, which is marked "server-only" so a build fails if it ever
--- reaches the browser). Every read is therefore a query written in this repository, and
--- each of those queries names its columns explicitly.
+-- That is intentional and is the whole security model. Credify's SECRET API key
+-- (sb_secret_..., the replacement for the legacy service_role key) carries Postgres's
+-- BYPASSRLS attribute, and that key exists in exactly one place: the Credify server process
+-- (see src/lib/supabase/server.ts, which is marked "server-only" so a build fails if it
+-- ever reaches the browser). Every read is therefore a query written in this repository,
+-- and each of those queries names its columns explicitly.
 --
--- Concretely: if the anon key leaks, or someone finds the project URL, they get nothing.
--- If a policy is ever added here, financial data becomes reachable from the internet - so
--- do not add one until there is real authentication to hang it on.
+-- Concretely: if a publishable key leaks, or someone finds the project URL, they get
+-- nothing. If a policy is ever added here, financial data becomes reachable from the
+-- internet - so do not add one until there is real authentication to hang it on.
 -- =====================================================================================
 alter table public.applications enable row level security;
 
 -- Belt and braces: explicitly refuse the two public roles, so that RLS being switched on is
--- not the ONLY thing standing between the anon key and this table. If someone later turns
--- RLS off by accident, these revokes still hold.
+-- not the ONLY thing standing between a publishable key and this table. If someone later
+-- turns RLS off by accident, these revokes still hold.
 --
 -- Wrapped in a check because `anon` and `authenticated` are Supabase's own roles and do not
 -- exist in a plain Postgres. The Supabase SQL Editor runs this file as ONE transaction, so
