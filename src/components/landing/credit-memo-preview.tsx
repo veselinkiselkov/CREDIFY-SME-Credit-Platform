@@ -2,8 +2,10 @@ import { RiskBadge } from "@/components/risk-badge";
 import { RiskScale } from "@/components/risk-scale";
 import { MODEL_VERSION } from "@/lib/risk-grades";
 import { NORDWERK_PREVIEW as n, NORDWERK_SCORE } from "@/lib/sample/nordwerk-preview";
+import { formatEur } from "@/lib/format";
 
-const eur = new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+// Shared with the application form and status pages, so one amount cannot be grouped
+// two different ways on two screens.
 
 /**
  * A static excerpt of the analyst's scorecard for the fictional Nordwerk example.
@@ -17,7 +19,7 @@ export function CreditMemoPreview() {
       <div className="p-5 sm:p-7">
         <p className="font-medium">{n.company}</p>
         <p className="text-sm text-muted-foreground">
-          {n.industry}, {n.yearsInBusiness} years trading. Requests {eur.format(n.loanAmountEur)} over{" "}
+          {n.industry}, {n.yearsInBusiness} years trading. Requests {formatEur(n.loanAmountEur)} over{" "}
           {n.loanTermMonths} months.
         </p>
 

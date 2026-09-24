@@ -12,9 +12,17 @@ Requires Node.js 20.9 or newer.
 
 ```bash
 npm install      # download dependencies (first time only)
+cp .env.example .env.local   # then paste in your Supabase credentials
 npm run dev      # start the development server at http://localhost:3000
 npm run build    # check that the production build succeeds before pushing
 ```
+
+The landing page, the application form and its validation all run without a database. Only
+**submitting** an application, and the two pages that read one back, need Supabase. Without
+credentials those screens show a clear "not connected" panel rather than an error.
+
+Setting Supabase up takes about five minutes and is done by hand, once:
+**[`supabase/README.md`](./supabase/README.md)**.
 
 ## Tech stack
 
@@ -22,7 +30,7 @@ npm run build    # check that the production build succeeds before pushing
 |---|---|
 | Framework | Next.js (App Router) with TypeScript |
 | Styling | Tailwind CSS v4, components in the shadcn/ui pattern |
-| Database | Supabase Postgres (from Day 2) |
+| Database | Supabase Postgres, reached only from the server |
 | Hosting | Vercel, deployed automatically from GitHub |
 
 ## Project structure
@@ -33,20 +41,37 @@ src/
     layout.tsx            Wraps every page: fonts, header, footer
     globals.css           Design tokens (colours, fonts, radius)
     page.tsx              Landing page  (/)
-    apply/                Loan application  (/apply)          Day 2
+    apply/                Loan application  (/apply)
+      actions.ts          Server action: validates, then stores a submission
+      submitted/[token]/  Confirmation screen with the reference number
+    status/[token]/       Applicant status page: status only, no figures
     analyst/              Analyst dashboard  (/analyst)       Day 4
     methodology/          Scoring methodology  (/methodology) Day 5
   components/
     layout/               Header, footer, logo, demo-mode switch
     landing/              Landing page sections
-    ui/                   Generic building blocks (button)
+    apply/                The four-step form, its steps and the review screen
+    ui/                   Generic building blocks (button, form fields)
     risk-badge.tsx        Grade badge used across the app
+    status-badge.tsx      Application status badge
     risk-scale.tsx        The 0-100 risk scale
   lib/
     risk-grades.ts        Single source of truth for grades, disclaimer, model version
     demo-mode.ts          Works out Applicant/Analyst view from the URL
+    format.ts             Euro and date formatting, shared by every screen
+    applications/
+      schema.ts           Zod schema: the definition of a valid application
+      options.ts          Dropdown choices, shared with the schema
+      status.ts           The five application statuses
+      reference.ts        Reference-number generation, URL-token checks
+      repository.ts       The only file that knows the table's shape
+      sample.ts           The "Fill with sample data" example
+    supabase/server.ts    Server-only database client
     sample/               Static example data for the landing page
     credit/               Scoring engine: ratios, bands, caps         Day 3
+supabase/
+  schema.sql              The table. Run once in the Supabase SQL Editor.
+  README.md               Manual setup steps
 ```
 
 ## Decision log
@@ -67,3 +92,41 @@ src/
 - **All colours are design tokens** in `globals.css`. Green, amber and red are reserved for risk meaning only.
 - **Grades are defined once** in `lib/risk-grades.ts`, so every screen shows identical labels and ranges.
 - **Unbuilt pages show a clear placeholder** instead of an error, so the live site never has broken links.
+
+**Day 2**
+
+- **One table, with typed columns.** The nine financial figures are real `numeric` columns,
+  not a JSON blob: they are what the Day 3 scorecard reads and what the Day 4 dashboard
+  sorts by, so they get types, CHECK constraints and indexes. No `users`, `documents` or
+  `scores` tables exist, because nothing needs them yet.
+- **The browser never talks to Supabase.** There is no login, so any Row Level Security
+  policy loose enough to let an anonymous applicant read their own application would also
+  let anyone read everyone's. Instead RLS is switched on with **no policies at all**, which
+  refuses every public key, and the server holds the one key that bypasses it — Supabase's
+  **secret** key (`sb_secret_…`, the replacement for the deprecated `service_role` key), in
+  `SUPABASE_SECRET_KEY`. There is deliberately **no publishable key** anywhere in the
+  project, because nothing in the browser needs one. Every query is therefore code in this
+  repository, and `src/lib/supabase/server.ts` is marked `server-only`, so a build **fails**
+  if that file is ever pulled into the browser bundle.
+- **Table permissions are in version control, not in a dashboard toggle.** `schema.sql`
+  grants `service_role` exactly `SELECT`, `INSERT` and `UPDATE` (never `DELETE` — an
+  application is a record, and an analyst changes a status rather than removing a case), and
+  explicitly revokes `anon` and `authenticated`. Grants are a separate gate from RLS: without
+  one, a query is refused before RLS is consulted. Supabase's "Automatically expose new
+  tables" setting is off by default on new projects, so these grants are what make the table
+  reachable by Credify at all — and doing it in SQL keeps the permissions reviewable in a
+  diff instead of depending on a project setting.
+- **Two identifiers, two jobs.** `reference` (`CR-2026-7K4QP2`) is short, readable and
+  quotable — and grants nothing. `access_token` is a random UUID and is the only way to
+  open an application's status page. Quoting a reference in an email therefore does not
+  hand over access.
+- **The status page shows three things**: reference, status, and the analyst's message if
+  there is one. Its link has no password and can be forwarded, so it is built to be worth
+  nothing to a stranger. The restriction is enforced in the query — `getApplicantStatus`
+  selects four columns and no financial one — not by remembering not to render something.
+  The score and grade stay off it permanently, not just until Day 3.
+- **One schema, validated twice.** The same Zod schema checks each step in the browser and
+  the whole application again on the server. Only the server run is trusted; a server
+  action is a public endpoint.
+- **Nothing is stored until submit.** No draft rows, no local storage. An abandoned
+  application leaves no trace of a company's finances anywhere.
