@@ -126,8 +126,12 @@ create trigger applications_set_updated_at
 -- =====================================================================================
 -- ROW LEVEL SECURITY
 --
--- Switched ON with NO policies, which means: every Supabase API key is refused, for every
--- row, for reads and writes alike. Nothing can query this table through the public API.
+-- Switched ON with NO policies, which means: every role WITHOUT the BYPASSRLS attribute is
+-- refused, for every row, for reads and writes alike - however generous its table grants
+-- may be. That covers anon and authenticated, the roles behind a publishable key.
+--
+-- (Grants are the other half of the story and are handled in the next section. A role needs
+-- to pass both gates.)
 --
 -- That is intentional and is the whole security model. Credify's SECRET API key
 -- (sb_secret_..., the replacement for the legacy service_role key) carries Postgres's
@@ -142,14 +146,65 @@ create trigger applications_set_updated_at
 -- =====================================================================================
 alter table public.applications enable row level security;
 
--- Belt and braces: explicitly refuse the two public roles, so that RLS being switched on is
--- not the ONLY thing standing between a publishable key and this table. If someone later
--- turns RLS off by accident, these revokes still hold.
+-- =====================================================================================
+-- TABLE PRIVILEGES (GRANTs) - A SEPARATE LAYER FROM RLS
 --
--- Wrapped in a check because `anon` and `authenticated` are Supabase's own roles and do not
--- exist in a plain Postgres. The Supabase SQL Editor runs this file as ONE transaction, so
--- an error on the last line would roll back the table as well - hence the guard rather than
--- a bare REVOKE.
+-- These are two different gates, and both must be passed:
+--
+--   GRANT  decides whether a role may touch the table AT ALL.
+--   RLS    decides which ROWS a role may see, once it is past the grant.
+--
+-- A role with no grant is refused before RLS is ever consulted: PostgREST returns
+-- `42501: permission denied for table applications`. So RLS being enabled says nothing
+-- about who can reach this table - the grants below do.
+--
+-- WHY THIS SECTION EXISTS AT ALL
+-- Supabase used to grant select/insert/update/delete on every new table in `public` to
+-- anon, authenticated and service_role automatically. That behaviour is controlled by the
+-- Data API setting "Automatically expose new tables", which is now OFF by default on new
+-- projects. With it off, a table created by this file is reachable by NOBODY - including
+-- Credify's own secret key - until it is granted explicitly.
+--
+-- Granting here rather than relying on that setting is the better arrangement anyway: the
+-- permissions live in version control next to the table they describe, they are reviewable
+-- in a diff, and a fresh project reproduces them exactly whatever the dashboard toggle says.
+-- =====================================================================================
+
+-- The one role Credify uses. `service_role` is what the secret key (sb_secret_...)
+-- authenticates as.
+--
+-- SELECT, INSERT and UPDATE - and deliberately NOT DELETE. The application never deletes a
+-- row: submissions are a record, and an analyst changes a status rather than removing a
+-- case. Withholding DELETE means neither a bug in this codebase nor a leaked key can
+-- destroy submitted credit applications. Add it only when something genuinely needs to.
+--
+-- No sequence grants are needed: the primary key is a uuid from gen_random_uuid(), not a
+-- serial, so there is no sequence to use.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant usage on schema public to service_role;
+    grant select, insert, update on public.applications to service_role;
+  else
+    -- Not an error: `service_role` is a Supabase role and is absent from a plain Postgres,
+    -- where this file may be run to test the schema itself.
+    raise notice 'Role "service_role" not found; skipping grants. Expected outside Supabase.';
+  end if;
+end;
+$$;
+
+-- The two public roles get nothing. `anon` backs the publishable key and `authenticated`
+-- backs a logged-in user, and neither should reach this table: Credify's browser code never
+-- talks to Supabase.
+--
+-- REVOKE rather than simply not granting, so that this holds even on a project where
+-- "Automatically expose new tables" is still ON and has already granted them access. It is
+-- also belt and braces for RLS: if someone later turns RLS off by accident, these revokes
+-- still stand between a publishable key and every applicant's financial figures.
+--
+-- Wrapped in a check because these are Supabase's own roles and do not exist in a plain
+-- Postgres. The Supabase SQL Editor runs this file as ONE transaction, so an error on the
+-- last line would roll back the table as well - hence the guard rather than a bare REVOKE.
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'anon') then

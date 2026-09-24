@@ -108,6 +108,14 @@ supabase/
   project, because nothing in the browser needs one. Every query is therefore code in this
   repository, and `src/lib/supabase/server.ts` is marked `server-only`, so a build **fails**
   if that file is ever pulled into the browser bundle.
+- **Table permissions are in version control, not in a dashboard toggle.** `schema.sql`
+  grants `service_role` exactly `SELECT`, `INSERT` and `UPDATE` (never `DELETE` — an
+  application is a record, and an analyst changes a status rather than removing a case), and
+  explicitly revokes `anon` and `authenticated`. Grants are a separate gate from RLS: without
+  one, a query is refused before RLS is consulted. Supabase's "Automatically expose new
+  tables" setting is off by default on new projects, so these grants are what make the table
+  reachable by Credify at all — and doing it in SQL keeps the permissions reviewable in a
+  diff instead of depending on a project setting.
 - **Two identifiers, two jobs.** `reference` (`CR-2026-7K4QP2`) is short, readable and
   quotable — and grants nothing. `access_token` is a random UUID and is the only way to
   open an application's status page. Quoting a reference in an email therefore does not

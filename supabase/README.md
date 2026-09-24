@@ -19,7 +19,7 @@ Total time: about five minutes.
      the right choice for a European deployment.
 3. Wait for provisioning to finish (roughly two minutes).
 
-## 2. Create the table
+## 2. Create the table and its permissions
 
 1. Open **SQL Editor** in the left sidebar, then **New query**.
 2. Open [`schema.sql`](./schema.sql) from this repository, copy the **whole file**, paste it
@@ -30,6 +30,60 @@ Total time: about five minutes.
 
 > If the badge says **RLS disabled**, stop and re-run the file. Row Level Security with no
 > policies is what makes the table unreadable from the public internet.
+
+### Why the file also grants permissions
+
+`schema.sql` does not just create the table. It also grants `service_role` — the role
+Credify's secret key authenticates as — `USAGE` on schema `public` and `SELECT`, `INSERT`
+and `UPDATE` on `public.applications`. **Without those grants Credify cannot reach its own
+table**, and every submission fails with:
+
+```
+42501: permission denied for table applications
+```
+
+This is because of the Data API setting **"Automatically expose new tables"**. Supabase used
+to grant every new table in `public` to `anon`, `authenticated` and `service_role`
+automatically; that setting is now **off by default on new projects**, so a table created by
+this file starts out reachable by nobody at all — Credify's own key included.
+
+Granting explicitly here is better than switching that setting back on, for three reasons:
+
+- the permissions live in version control next to the table they describe, and show up in a
+  diff when they change;
+- a fresh project reproduces them exactly, whatever the dashboard toggle happens to say;
+- turning the setting on would also expose **every future table** to `anon` and
+  `authenticated`, which is the opposite of what this project wants.
+
+**Grants and RLS are two separate gates, and a role must pass both.** A grant decides whether
+a role may touch the table at all; RLS decides which rows it then sees. A role with no grant
+is refused before RLS is even consulted — which is why "RLS is enabled" on its own says
+nothing about who can reach a table.
+
+Credify's arrangement:
+
+| Role | Grants | RLS | Net effect |
+|---|---|---|---|
+| `service_role` (secret key) | `SELECT`, `INSERT`, `UPDATE` | bypassed (`BYPASSRLS`) | full access, server-side only |
+| `anon` (publishable key) | none — explicitly revoked | enabled, no policies | no access |
+| `authenticated` | none — explicitly revoked | enabled, no policies | no access |
+
+`DELETE` is deliberately **not** granted. The application never deletes a row: a submission
+is a record, and an analyst changes a status rather than removing a case. Withholding it
+means neither a bug in the codebase nor a leaked key can destroy submitted applications.
+
+To confirm the grants landed, run this in the SQL Editor:
+
+```sql
+select grantee, string_agg(privilege_type, ', ' order by privilege_type) as privileges
+from information_schema.role_table_grants
+where table_name = 'applications'
+  and grantee in ('anon', 'authenticated', 'service_role')
+group by grantee order by grantee;
+```
+
+You should get exactly one row: `service_role | INSERT, SELECT, UPDATE`. If `anon` or
+`authenticated` appears, re-run `schema.sql` — it revokes them.
 
 ## 3. Copy the two credentials
 
@@ -110,6 +164,15 @@ Save, then reload `/status/<access_token>`. `updated_at` is maintained by a trig
 
 To get the link for a row: copy its `access_token` and open
 `http://localhost:3000/status/<access_token>`.
+
+## If something goes wrong
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `42501: permission denied for table applications` | The grants did not run, or the table was recreated by hand afterwards. | Re-run `schema.sql`. |
+| `relation "public.applications" does not exist` | `schema.sql` was never run, or was run against a different project. | Check you are in the right project, then run it. |
+| Submitting shows "the application database is not connected" | `SUPABASE_URL` / `SUPABASE_SECRET_KEY` are missing from the running process. | Locally: check `.env.local` and restart `npm run dev`. On Vercel: add them, then **redeploy**. |
+| `Invalid API key` | A publishable key, or a key from another project, is in `SUPABASE_SECRET_KEY`. | Use the `sb_secret_…` key from this project. |
 
 ## Starting over
 
