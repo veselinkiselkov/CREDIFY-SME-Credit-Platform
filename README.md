@@ -14,8 +14,12 @@ Requires Node.js 20.9 or newer.
 npm install      # download dependencies (first time only)
 cp .env.example .env.local   # then paste in your Supabase credentials
 npm run dev      # start the development server at http://localhost:3000
+npm test         # run the credit-engine test suite
 npm run build    # check that the production build succeeds before pushing
 ```
+
+`npm test` needs no database and no environment variables: the credit engine is a pure
+function, so the suite is figures in, numbers out.
 
 The landing page, the application form and its validation all run without a database. Only
 **submitting** an application, and the two pages that read one back, need Supabase. Without
@@ -31,6 +35,8 @@ Setting Supabase up takes about five minutes and is done by hand, once:
 | Framework | Next.js (App Router) with TypeScript |
 | Styling | Tailwind CSS v4, components in the shadcn/ui pattern |
 | Database | Supabase Postgres, reached only from the server |
+| Credit engine | Plain TypeScript, no dependencies, no AI |
+| Tests | Vitest (dev dependency only) |
 | Hosting | Vercel, deployed automatically from GitHub |
 
 ## Project structure
@@ -59,6 +65,14 @@ src/
     risk-grades.ts        Single source of truth for grades, disclaimer, model version
     demo-mode.ts          Works out Applicant/Analyst view from the URL
     format.ts             Euro and date formatting, shared by every screen
+    credit/               THE CREDIT ENGINE
+      index.ts            Public API: assess(input) -> assessment
+      types.ts            The engine's contract, in and out
+      scorecard.ts        v1.0 weights and thresholds. The only place they are written
+      ratios.ts           Ratio maths, with every division guarded
+      data-quality.ts     Input-consistency checks, kept out of the score
+      engine.ts           Scoring, critical flags, grade cap, explanations
+      __tests__/          211 tests, including the Nordwerk reference case
     applications/
       schema.ts           Zod schema: the definition of a valid application
       options.ts          Dropdown choices, shared with the schema
@@ -67,11 +81,13 @@ src/
       repository.ts       The only file that knows the table's shape
       sample.ts           The "Fill with sample data" example
     supabase/server.ts    Server-only database client
-    sample/               Static example data for the landing page
-    credit/               Scoring engine: ratios, bands, caps         Day 3
+    sample/
+      nordwerk.ts         The sample borrower's figures and its assessment
+      nordwerk-preview.ts The landing-page scorecard, derived from the engine
 supabase/
   schema.sql              The table. Run once in the Supabase SQL Editor.
   README.md               Manual setup steps
+vitest.config.mts         Test runner configuration
 ```
 
 ## Decision log
@@ -130,3 +146,82 @@ supabase/
   action is a public endpoint.
 - **Nothing is stored until submit.** No draft rows, no local storage. An abandoned
   application leaves no trace of a company's finances anywhere.
+
+**Day 3 — the credit engine**
+
+- **The engine is deterministic, and no AI touches any number.** A credit decision has to be
+  explainable to the borrower who was refused, to the analyst who signed it, and to a
+  regulator reading the file two years later. The score is a sum of eight table lookups and
+  the sentences are templates filled with the values that produced them, so the same input
+  gives the same output every time and every number can be traced to the figure behind it. A
+  language model varies between runs, cannot show which input drove the result, and would be
+  guessing at exactly the point where the work has to be exact. It has no place here.
+  Generating *prose about* a finished assessment is a different job, and a later one.
+- **Leverage is scored PRO FORMA**, `(existing debt + requested loan) / EBITDA`. The lender's
+  question is not "can this business carry the debt it already has" — it plainly can, or it
+  would not still be trading — but "can it carry the debt it is about to have". Scoring
+  today's leverage would approve the loan on the strength of the balance sheet that exists
+  before the money is lent. Current leverage is still shown beside it, so the analyst can see
+  exactly what the loan changes.
+- **"Current Interest Coverage" is deliberately not called DSCR.** It is `EBITDA / current
+  interest expense`: the interest burden the business carries **today**. It contains neither
+  the interest nor the principal of the loan being requested, because the MVP models no
+  interest rate and no amortisation schedule. A real debt service coverage ratio would need
+  both. Calling this one DSCR would claim a post-financing view the model does not have — the
+  single easiest way for a credit model to mislead the person relying on it. When a true DSCR
+  arrives it belongs *beside* this factor, not disguised as it.
+- **ROA and ROE are shown but never scored.** Net profit margin already carries 15 points for
+  profitability. Return on assets and return on equity are built from the same net income
+  figure over a different denominator, so scoring them would count one year's profit three
+  times and quietly turn a 15-point weight into something nearer 35 — one good or bad year
+  would then swing the grade far more than intended. ROE is worse still: its denominator is
+  the smallest number on the balance sheet, so it explodes as equity approaches zero and a
+  nearly insolvent company can post a spectacular figure. Both are genuinely useful for an
+  analyst to read, which is why they are calculated and displayed.
+- **Critical flags cap the grade; they never reject.** Four conditions — EBITDA at or below
+  zero, negative equity, interest coverage under 1.0×, a current ratio under 0.8 — hold the
+  grade at no better than High. An automatic rejection would make this a decision engine, and
+  it cannot see the things that legitimately rescue such a case: a parent guarantee, security
+  worth more than the loan, a signed contract that fixes next year, an owner injecting
+  capital. What it can honestly do is refuse to call the case low risk. The score is left
+  untouched, so the analyst sees both what the business scored and why it is not being shown
+  as its score alone would suggest.
+- **Data quality is a separate channel from credit risk.** A balance sheet that does not
+  balance is usually a typo, not a solvency problem, so it produces a warning and changes no
+  points. Scoring it would punish a mistake as though it were a risk; ignoring it would hand
+  the analyst a confident number built on figures nobody trusts.
+- **Division by zero can never reach the interface.** Every division is guarded and returns a
+  named reason rather than a number. This is not defensive decoration: in JavaScript every
+  comparison against `NaN` is false, so a `NaN` reaching the scorer would fail every threshold
+  and silently drop into the worst band, marking a company down with nothing in the output to
+  say why. Negative EBITDA is guarded for the mirror-image reason — a negative leverage ratio
+  passes every "lower is better" threshold, so an unguarded loss-making business would score
+  full marks on the heaviest factor in the model.
+- **The landing page now renders engine output.** The eight rows of the home-page scorecard
+  were hand-calculated constants until Day 3. They are computed by `assess()` now, so the
+  marketing page and the model cannot drift apart: change a threshold and either the preview
+  moves with it or the Nordwerk test fails.
+
+**Known limitations of scorecard v1.0**
+
+- **One set of thresholds is applied to every industry, and that is the model's biggest
+  weakness.** A 1.2 current ratio is comfortable for a consultancy that carries no stock and
+  is collected in thirty days; it is tight for a manufacturer financing raw materials and
+  work in progress. 2.5× leverage is modest for a utility-like business with predictable
+  cash flows and aggressive for a construction firm whose revenue arrives in lumps. Because
+  the bands are fixed, v1.0 systematically flatters asset-light service businesses and
+  penalises working-capital-intensive ones. The application already collects industry, so
+  the data to fix it is being gathered; the correction is industry-specific bands, or a
+  benchmark percentile within an industry, in a later version.
+- **The weights are reasoned, not fitted.** They are a considered starting point for an
+  illustrative model, not coefficients calibrated against observed defaults. A real
+  underwriting scorecard would be fitted to a default book and revalidated.
+- **One year of figures, self-reported and unaudited.** No trend beyond a single revenue
+  comparison, no verification, no bank statements, no management quality, no sector outlook,
+  no security or guarantees. A real credit file contains all of these; the analyst supplies
+  them.
+- **Equity is derived, not reported.** The Day 2 form does not ask for it, so the engine
+  computes `total assets − debt − current liabilities`. A business with large long-term
+  non-debt liabilities will have its equity overstated, which makes negative equity harder
+  to detect than it should be. Supplying `equityEur` replaces the derivation with the real
+  figure, and the engine labels which of the two it used.

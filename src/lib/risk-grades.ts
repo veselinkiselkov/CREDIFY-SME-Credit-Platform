@@ -4,8 +4,9 @@
  * Every screen that shows a grade (badges, the risk scale, the dashboard, the methodology page)
  * reads from this file, so labels and score ranges can never disagree between screens.
  *
- * The full scoring engine (ratios, factor bands, weights) is built on Day 3 in lib/credit/.
- * The grade definitions live here from Day 1 because the landing page already displays them.
+ * The scoring engine (ratios, factor bands, weights) lives in lib/credit/ and READS this
+ * file rather than defining its own thresholds, so a grade shown by the engine and the
+ * grade scale printed beside it on the landing page can never disagree.
  */
 
 export const MODEL_VERSION = "v1.0";
@@ -76,10 +77,11 @@ export const RISK_GRADES: readonly RiskGrade[] = [
 ];
 
 /**
- * RISK-GRADE CAP (implemented in the scoring engine on Day 3).
+ * RISK-GRADE CAP, applied by the credit engine (lib/credit/engine.ts).
  * If a critical flag is present (EBITDA of zero or less, negative equity,
  * interest coverage below 1.0x, or a current ratio below 0.8), the grade is capped at High.
- * The cap changes the grade shown to the analyst. It never approves or rejects anything.
+ * The cap changes the grade shown to the analyst. It never approves or rejects anything,
+ * and it never changes the score itself - both numbers stay visible.
  */
 export const CAPPED_GRADE_ID: RiskGradeId = "high";
 
