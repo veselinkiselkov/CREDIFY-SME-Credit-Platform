@@ -85,6 +85,61 @@ group by grantee order by grantee;
 You should get exactly one row: `service_role | INSERT, SELECT, UPDATE`. If `anon` or
 `authenticated` appears, re-run `schema.sql` — it revokes them.
 
+## 2b. If your project already exists: run migration 001
+
+**Skip this if you have just created the table from `schema.sql` above** — it already has
+everything.
+
+If your Supabase project was set up before total liabilities and shareholders' equity were
+added, run [`migrations/001_add_liabilities_and_equity.sql`](./migrations/001_add_liabilities_and_equity.sql)
+once, the same way: **SQL Editor → New query → paste the whole file → Run**.
+
+**It is additive and safe.** It adds two nullable columns and touches no existing data, so
+it cannot fail on rows already in the table, needs no downtime, and re-running it is a no-op.
+
+### Why the change
+
+The credit engine used to *derive* equity as `total assets − interest-bearing debt −
+current liabilities`. That is unreliable in both directions:
+
+- interest-bearing debt **overlaps** with current liabilities — the current portion of a
+  term loan belongs to both — which understates equity;
+- current liabilities **exclude** long-term non-debt items such as provisions, deferred tax
+  and lease obligations, which overstates it.
+
+The overstatement is the dangerous one: it makes the negative-equity critical flag fire
+**less** often than it should. Both figures are now asked for on the application form and
+used directly — for the negative-equity flag, and for the `assets = liabilities + equity`
+data-quality check, which could never fail while equity was derived from that same identity.
+
+### After running it
+
+Existing rows keep `NULL` in both columns, because there are no reported figures to put
+there and inventing some would recreate the exact problem the change removes. Every new
+submission supplies both — the form makes them required.
+
+If your table only holds throwaway test rows, the cleanest thing is to delete them and
+re-submit through the form, which gives you genuine reported figures:
+
+```sql
+-- see what you would be deleting first
+select reference, company_name, submitted_at from public.applications where equity_eur is null;
+
+-- then, if you are happy to lose them
+delete from public.applications where equity_eur is null;
+```
+
+Confirm the columns landed:
+
+```sql
+select column_name, data_type, is_nullable
+from information_schema.columns
+where table_name = 'applications'
+  and column_name in ('total_liabilities_eur', 'equity_eur');
+```
+
+You should get two rows, both `numeric` and both nullable.
+
 ## 3. Copy the two credentials
 
 In **Project Settings**:
@@ -171,6 +226,7 @@ To get the link for a row: copy its `access_token` and open
 |---|---|---|
 | `42501: permission denied for table applications` | The grants did not run, or the table was recreated by hand afterwards. | Re-run `schema.sql`. |
 | `relation "public.applications" does not exist` | `schema.sql` was never run, or was run against a different project. | Check you are in the right project, then run it. |
+| `column "equity_eur" of relation "applications" does not exist` | The project predates the balance-sheet change. | Run `migrations/001_add_liabilities_and_equity.sql` (section 2b). |
 | Submitting shows "the application database is not connected" | `SUPABASE_URL` / `SUPABASE_SECRET_KEY` are missing from the running process. | Locally: check `.env.local` and restart `npm run dev`. On Vercel: add them, then **redeploy**. |
 | `Invalid API key` | A publishable key, or a key from another project, is in `SUPABASE_SECRET_KEY`. | Use the `sb_secret_…` key from this project. |
 

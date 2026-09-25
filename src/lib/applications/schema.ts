@@ -127,7 +127,7 @@ const applicationFields = {
   purposeDescription: textField("Purpose description", 20, 1000),
 
   // --- Step 3: financial information ----------------------------------------------
-  // The nine figures below are exactly what the Day 3 scorecard needs, and nothing more.
+  // These eleven figures are exactly what the Day 3 scorecard needs, and nothing more.
   fiscalYear: numberField("Financial year", {
     min: CURRENT_YEAR - 5,
     max: CURRENT_YEAR,
@@ -145,6 +145,11 @@ const applicationFields = {
   totalAssetsEur: numberField("Total assets", { min: 1, max: MAX_MONEY, example: "3500000" }),
   currentAssetsEur: numberField("Current assets", { min: 0, max: MAX_MONEY, example: "1400000" }),
   currentLiabilitiesEur: numberField("Current liabilities", { min: 0, max: MAX_MONEY, example: "900000" }),
+  totalLiabilitiesEur: numberField("Total liabilities", { min: 0, max: MAX_MONEY, example: "2100000" }),
+  // Equity may be negative: a business whose liabilities exceed its assets is exactly the
+  // case the scorecard's negative-equity critical flag exists to catch, so the figure has to
+  // be accepted rather than rejected at the form.
+  equityEur: numberField("Shareholders' equity", { min: -MAX_MONEY, max: MAX_MONEY, example: "1400000" }),
 
   // --- Step 4: review and submit ---------------------------------------------------
   confirmAccuracy: z
@@ -203,6 +208,8 @@ export const APPLICATION_STEPS = [
       "totalAssetsEur",
       "currentAssetsEur",
       "currentLiabilitiesEur",
+      "totalLiabilitiesEur",
+      "equityEur",
     ],
   },
   {
@@ -221,7 +228,12 @@ export const STEP_COUNT = APPLICATION_STEPS.length;
  * Deliberately few: the form should catch impossible balance sheets, not audit them.
  */
 function checkFinancialConsistency(
-  values: { currentAssetsEur: number; totalAssetsEur: number },
+  values: {
+    currentAssetsEur: number;
+    totalAssetsEur: number;
+    currentLiabilitiesEur: number;
+    totalLiabilitiesEur: number;
+  },
   ctx: z.RefinementCtx,
 ) {
   if (values.currentAssetsEur > values.totalAssetsEur) {
@@ -231,6 +243,20 @@ function checkFinancialConsistency(
       message: "Current assets cannot be greater than total assets.",
     });
   }
+
+  if (values.currentLiabilitiesEur > values.totalLiabilitiesEur) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["totalLiabilitiesEur"],
+      message: "Total liabilities cannot be less than current liabilities.",
+    });
+  }
+
+  // Assets = liabilities + equity is NOT enforced here, deliberately. A balance sheet that
+  // is a few percent out is nearly always rounding or a figure taken from a different
+  // statement, and blocking the whole application over it would be wrong. The credit engine
+  // raises it as a data-quality warning for the analyst instead. Only the two genuinely
+  // impossible relationships above are hard errors.
 }
 
 /** The whole application. Used by the server action before writing to the database. */
@@ -314,6 +340,8 @@ export const EMPTY_APPLICATION: ApplicationFormValues = {
   totalAssetsEur: "",
   currentAssetsEur: "",
   currentLiabilitiesEur: "",
+  totalLiabilitiesEur: "",
+  equityEur: "",
   confirmAccuracy: "false",
 };
 
