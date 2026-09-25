@@ -72,7 +72,7 @@ src/
       ratios.ts           Ratio maths, with every division guarded
       data-quality.ts     Input-consistency checks, kept out of the score
       engine.ts           Scoring, critical flags, grade cap, explanations
-      __tests__/          211 tests, including the Nordwerk reference case
+      __tests__/          230 tests, including the Nordwerk reference case
     applications/
       schema.ts           Zod schema: the definition of a valid application
       options.ts          Dropdown choices, shared with the schema
@@ -86,6 +86,7 @@ src/
       nordwerk-preview.ts The landing-page scorecard, derived from the engine
 supabase/
   schema.sql              The table. Run once in the Supabase SQL Editor.
+  migrations/             One-off changes for a project that already exists
   README.md               Manual setup steps
 vitest.config.mts         Test runner configuration
 ```
@@ -111,7 +112,7 @@ vitest.config.mts         Test runner configuration
 
 **Day 2**
 
-- **One table, with typed columns.** The nine financial figures are real `numeric` columns,
+- **One table, with typed columns.** The eleven financial figures are real `numeric` columns,
   not a JSON blob: they are what the Day 3 scorecard reads and what the Day 4 dashboard
   sorts by, so they get types, CHECK constraints and indexes. No `users`, `documents` or
   `scores` tables exist, because nothing needs them yet.
@@ -197,6 +198,29 @@ vitest.config.mts         Test runner configuration
   say why. Negative EBITDA is guarded for the mirror-image reason — a negative leverage ratio
   passes every "lower is better" threshold, so an unguarded loss-making business would score
   full marks on the heaviest factor in the model.
+- **Shareholders' equity and total liabilities are REPORTED, never derived.** An earlier
+  version computed equity as `total assets − interest-bearing debt − current liabilities`.
+  That is wrong in both directions: interest-bearing debt overlaps with current liabilities
+  (the current portion of a term loan sits in both), and current liabilities exclude
+  long-term non-debt items such as provisions, deferred tax and lease obligations. The net
+  error usually **overstates** equity — the dangerous direction, because the negative-equity
+  critical flag then fires less often than it should. Both figures are now fields on the
+  application form. This also makes the balance-sheet check real: while equity was derived
+  from `assets − liabilities`, the identity `assets = liabilities + equity` held by
+  construction and no mismatch could ever be detected.
+- **A zero denominator is not automatically the worst case.** Two situations produce no
+  ratio but are not bad news, and both now score on the figures as reported:
+  - **Debt outstanding with no reported interest expense** — interest coverage scores full
+    marks, because the reported figures show no interest burden, *and* a data-quality
+    warning asks the analyst to confirm the debt really is interest-free (a shareholder or
+    group loan, say) rather than the figure being a typing error.
+  - **No current liabilities** — liquidity scores full marks, because nothing falls due
+    within the year, with a warning asking for the figure to be confirmed.
+
+  Docking points in either case would score a *suspected data-entry error* as though it were
+  credit risk, which is exactly the mixing of concerns the engine avoids everywhere else.
+  The analyst gets the score and the doubt as two separate signals and can act on either.
+  Neither case raises a critical flag: a ratio with no value is not evidence of anything.
 - **The landing page now renders engine output.** The eight rows of the home-page scorecard
   were hand-calculated constants until Day 3. They are computed by `assess()` now, so the
   marketing page and the model cannot drift apart: change a threshold and either the preview
@@ -220,8 +244,6 @@ vitest.config.mts         Test runner configuration
   comparison, no verification, no bank statements, no management quality, no sector outlook,
   no security or guarantees. A real credit file contains all of these; the analyst supplies
   them.
-- **Equity is derived, not reported.** The Day 2 form does not ask for it, so the engine
-  computes `total assets − debt − current liabilities`. A business with large long-term
-  non-debt liabilities will have its equity overstated, which makes negative equity harder
-  to detect than it should be. Supplying `equityEur` replaces the derivation with the real
-  figure, and the engine labels which of the two it used.
+- **One year of figures is self-reported and unverified.** The engine trusts what the
+  applicant typed. Confirming it against filed accounts or bank statements is the analyst's
+  job, and the data-quality warnings exist to tell them where to look first.

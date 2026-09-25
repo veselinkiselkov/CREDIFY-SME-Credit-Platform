@@ -18,6 +18,10 @@ export const HEALTHY_INPUT: CreditInput = {
   totalAssetsEur: 1_000_000,
   currentAssetsEur: 400_000,
   currentLiabilitiesEur: 200_000, // 2.0 current ratio -> 15/15
+  // The balance sheet balances: 300k liabilities + 700k equity = 1.0M total assets, so the
+  // healthy borrower raises no data-quality warnings either.
+  totalLiabilitiesEur: 300_000,
+  equityEur: 700_000,
   yearsInBusiness: 12, //                         -> 5/5
 };
 

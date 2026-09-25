@@ -24,12 +24,16 @@ export const NORDWERK_PROFILE = {
 };
 
 /**
- * Exactly the figures the Day 2 application form collects - no more.
+ * Exactly the figures the application form collects - no more.
  *
- * The optional balance-sheet fields (equity, total liabilities, cash) are deliberately left
- * out, because the form does not ask for them. Equity is therefore derived by the engine as
- * 3.5M − 1.2M − 0.9M = 1.4M, which is the figure the real accounts would show. A test in
- * the suite supplies the full balance sheet separately to exercise the checks that need it.
+ * Total liabilities and shareholders' equity are REPORTED here, as the form now asks for
+ * them, rather than being worked out from debt and current liabilities. For this company
+ * the two happen to agree (1.2M debt + 0.9M current liabilities = 2.1M), but that is a
+ * property of Nordwerk's simple balance sheet, not a rule: a business with provisions,
+ * deferred tax or lease obligations would have more total liabilities than that sum, and the
+ * derived figure would have overstated its equity.
+ *
+ * The balance sheet balances exactly: 2.1M + 1.4M = 3.5M in total assets.
  */
 export const NORDWERK_INPUT: CreditInput = {
   loanAmountEur: 600_000,
@@ -44,6 +48,8 @@ export const NORDWERK_INPUT: CreditInput = {
   totalAssetsEur: 3_500_000,
   currentAssetsEur: 1_400_000,
   currentLiabilitiesEur: 900_000,
+  totalLiabilitiesEur: 2_100_000,
+  equityEur: 1_400_000,
 
   yearsInBusiness: 12,
 };

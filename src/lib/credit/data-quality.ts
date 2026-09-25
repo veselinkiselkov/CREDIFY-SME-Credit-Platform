@@ -1,5 +1,5 @@
 import { formatEur } from "@/lib/format";
-import type { CreditInput, DataQualityWarning, EquityBasis } from "./types";
+import type { CreditInput, DataQualityWarning } from "./types";
 
 /**
  * DATA-QUALITY CHECKS.
@@ -23,19 +23,18 @@ import type { CreditInput, DataQualityWarning, EquityBasis } from "./types";
 /** How far assets may drift from liabilities + equity before it is worth mentioning. */
 const BALANCE_SHEET_TOLERANCE = 0.02;
 
-export function checkDataQuality(input: CreditInput, equity: EquityBasis): DataQualityWarning[] {
+export function checkDataQuality(input: CreditInput): DataQualityWarning[] {
   const warnings: DataQualityWarning[] = [];
 
   // -------------------------------------------------------------------------------------
   // 1. The balance sheet should balance: assets = liabilities + equity.
   //
-  // Only runs when total liabilities were supplied. With equity derived rather than
-  // reported, this compares the reported total liabilities against debt plus current
-  // liabilities, which usefully catches liabilities the application never asked about.
+  // Both sides are now REPORTED figures, so this is a real check on what the applicant
+  // typed. It could not be done while equity was derived from assets and liabilities:
+  // the identity held by construction and the check could never fail.
   // -------------------------------------------------------------------------------------
-  const totalLiabilities = input.totalLiabilitiesEur;
-  if (typeof totalLiabilities === "number" && Number.isFinite(totalLiabilities) && input.totalAssetsEur > 0) {
-    const impliedAssets = totalLiabilities + equity.valueEur;
+  if (input.totalAssetsEur > 0) {
+    const impliedAssets = input.totalLiabilitiesEur + input.equityEur;
     const difference = Math.abs(input.totalAssetsEur - impliedAssets);
     const relative = difference / input.totalAssetsEur;
     if (relative > BALANCE_SHEET_TOLERANCE) {
@@ -44,10 +43,23 @@ export function checkDataQuality(input: CreditInput, equity: EquityBasis): DataQ
         label: "Balance sheet does not balance",
         detail:
           `Total assets of ${formatEur(input.totalAssetsEur)} differ by ${(relative * 100).toFixed(1)}% from ` +
-          `liabilities plus equity (${formatEur(impliedAssets)}).` +
-          (equity.derived ? " Equity here is derived, not reported, so the gap may be liabilities not asked for." : ""),
+          `liabilities plus equity (${formatEur(input.totalLiabilitiesEur)} + ${formatEur(input.equityEur)} = ` +
+          `${formatEur(impliedAssets)}).`,
       });
     }
+  }
+
+  // -------------------------------------------------------------------------------------
+  // 1b. Current liabilities are part of total liabilities, so they cannot exceed them.
+  // -------------------------------------------------------------------------------------
+  if (input.currentLiabilitiesEur > input.totalLiabilitiesEur) {
+    warnings.push({
+      id: "current-liabilities-exceed-total-liabilities",
+      label: "Current liabilities exceed total liabilities",
+      detail:
+        `Current liabilities of ${formatEur(input.currentLiabilitiesEur)} are greater than total liabilities of ` +
+        `${formatEur(input.totalLiabilitiesEur)}.`,
+    });
   }
 
   // -------------------------------------------------------------------------------------
@@ -107,7 +119,25 @@ export function checkDataQuality(input: CreditInput, equity: EquityBasis): DataQ
       label: "Debt reported with no interest expense",
       detail:
         `${formatEur(input.existingDebtEur)} of interest-bearing debt is reported, but interest expense is zero. ` +
-        "Interest coverage cannot be calculated and scores zero until the figure is confirmed.",
+        "Interest coverage has been scored on the figures as given. Please confirm that the debt is genuinely " +
+        "interest-free (a shareholder or group loan, say) and that the interest figure was entered correctly.",
+    });
+  }
+
+  // -------------------------------------------------------------------------------------
+  // 6. No current liabilities at all.
+  //
+  // Liquidity is scored full marks for this, because on the figures as reported there is
+  // nothing falling due. A trading business almost always owes something within the year,
+  // so the figure is worth confirming - but that doubt belongs here, not in the score.
+  // -------------------------------------------------------------------------------------
+  if (input.currentLiabilitiesEur === 0) {
+    warnings.push({
+      id: "no-current-liabilities",
+      label: "No current liabilities reported",
+      detail:
+        "Current liabilities are reported as zero, so liquidity has been scored on the basis that nothing falls " +
+        "due within twelve months. Most trading businesses carry at least trade payables; please confirm the figure.",
     });
   }
 

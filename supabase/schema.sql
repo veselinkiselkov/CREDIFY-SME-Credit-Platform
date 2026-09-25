@@ -92,7 +92,24 @@ create table if not exists public.applications (
   existing_debt_eur        numeric(14,2) not null check (existing_debt_eur >= 0),
   total_assets_eur         numeric(14,2) not null check (total_assets_eur >= 0),
   current_assets_eur       numeric(14,2) not null check (current_assets_eur >= 0),
-  current_liabilities_eur  numeric(14,2) not null check (current_liabilities_eur >= 0)
+  current_liabilities_eur  numeric(14,2) not null check (current_liabilities_eur >= 0),
+
+  -- Total liabilities and equity are REPORTED, not derived.
+  --
+  -- An earlier version of the engine worked equity out as
+  --   total assets − interest-bearing debt − current liabilities
+  -- which is unreliable in both directions: interest-bearing debt can overlap with current
+  -- liabilities (the current portion of a term loan sits in both), and current liabilities
+  -- miss long-term non-debt items such as provisions, deferred tax and lease obligations.
+  -- The error goes the wrong way for a lender - it OVERSTATES equity, so the negative-equity
+  -- critical flag fires less often than it should. Both figures are now asked for directly.
+  --
+  -- Nullable, because these columns were added after the table already held rows. Every new
+  -- submission supplies them: the application form makes both required. See
+  -- supabase/migrations/001_add_liabilities_and_equity.sql.
+  -- Equity has no CHECK: negative equity is a real state and the flag the engine looks for.
+  total_liabilities_eur    numeric(14,2) check (total_liabilities_eur >= 0),
+  equity_eur               numeric(14,2)
 );
 
 -- The analyst dashboard (Day 4) lists newest first and filters by status.

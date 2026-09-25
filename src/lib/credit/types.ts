@@ -18,13 +18,8 @@ import type { RiskGrade } from "@/lib/risk-grades";
 // =======================================================================================
 
 /**
- * The figures an assessment is calculated from.
- *
- * The required fields are exactly what the Day 2 application form collects. The optional
- * ones are richer balance-sheet detail the form does not ask for yet; when they are absent
- * the engine still produces a full score and simply skips the checks that need them. That
- * way the engine is ready for a fuller form without changing shape, and nothing has to be
- * invented to fill a gap.
+ * The figures an assessment is calculated from. These are exactly what the application form
+ * collects, with `cashEur` the one optional extra.
  */
 export interface CreditInput {
   // --- The request ---------------------------------------------------------------------
@@ -44,19 +39,26 @@ export interface CreditInput {
   totalAssetsEur: number;
   currentAssetsEur: number;
   currentLiabilitiesEur: number;
+  /** Everything owed, short and long term. Reported, never derived. */
+  totalLiabilitiesEur: number;
+  /**
+   * Shareholders' equity AS REPORTED. May be negative.
+   *
+   * This figure is asked for rather than calculated. The engine used to derive it as
+   * `total assets − interest-bearing debt − current liabilities`, which is unreliable in
+   * both directions: interest-bearing debt can overlap with current liabilities (the current
+   * portion of a term loan sits in both), while current liabilities miss long-term non-debt
+   * items such as provisions, deferred tax and lease obligations. The net error typically
+   * OVERSTATES equity, which is the dangerous direction - it makes the negative-equity
+   * critical flag fire less often than it should.
+   */
+  equityEur: number;
 
   // --- Company -------------------------------------------------------------------------
   yearsInBusiness: number;
 
   // --- Optional detail -----------------------------------------------------------------
-  /**
-   * When given, equity is taken from the accounts. When absent, the engine derives it as
-   * total assets - existing debt - current liabilities, and says so (see EquityBasis).
-   */
-  equityEur?: number | null;
-  /** Enables the balance-sheet identity check (assets = liabilities + equity). */
-  totalLiabilitiesEur?: number | null;
-  /** Enables the "cash exceeds current assets" check. */
+  /** Enables the "cash exceeds current assets" check. The form does not collect it yet. */
   cashEur?: number | null;
 }
 
@@ -92,8 +94,18 @@ export type RatioStatus =
   | "ok"
   /** Mathematically undefined or economically meaningless, e.g. leverage on negative EBITDA. */
   | "not-meaningful"
-  /** A specific, favourable state: no debt and no interest expense. */
+  /** No interest-bearing debt and no interest expense. The best possible state. */
   | "no-debt"
+  /**
+   * Debt is outstanding but the reported interest expense is zero.
+   *
+   * Scored on the figures as reported - there is no interest burden in them - with a
+   * data-quality warning asking the analyst to confirm the debt really is interest-free.
+   * Judging the credit and questioning the data are two different jobs.
+   */
+  | "no-interest-reported"
+  /** Nothing falls due within the year, so the current ratio has no denominator. */
+  | "no-current-liabilities"
   /** An input needed for this ratio was not supplied. */
   | "not-provided";
 
@@ -144,20 +156,14 @@ export type DataQualityWarningId =
   | "cash-exceeds-current-assets"
   | "current-assets-exceed-total-assets"
   | "net-income-exceeds-ebitda"
-  | "debt-without-interest-expense";
+  | "current-liabilities-exceed-total-liabilities"
+  | "debt-without-interest-expense"
+  | "no-current-liabilities";
 
 export interface DataQualityWarning {
   id: DataQualityWarningId;
   label: string;
   detail: string;
-}
-
-/** Whether equity came from the accounts or was derived, which the analyst should know. */
-export interface EquityBasis {
-  valueEur: number;
-  /** true when derived as total assets - existing debt - current liabilities. */
-  derived: boolean;
-  explanation: string;
 }
 
 // =======================================================================================
@@ -188,7 +194,8 @@ export interface CreditAssessment {
   /** Concerns about the INPUT data. Never affects the score. */
   dataQualityWarnings: DataQualityWarning[];
 
-  equity: EquityBasis;
+  /** Shareholders' equity as reported by the applicant. Echoed back for the analyst. */
+  equityEur: number;
 
   /**
    * Repeated on every assessment so a result cannot be copied somewhere else and lose it.

@@ -11,7 +11,6 @@ import { assessWith, hasWarning } from "./helpers";
 
 describe("balance-sheet identity (assets = liabilities + equity)", () => {
   it("passes silently when the balance sheet balances", () => {
-    // 1.0M assets = 0.3M liabilities + 0.7M equity
     const result = assessWith({ totalAssetsEur: 1_000_000, totalLiabilitiesEur: 300_000, equityEur: 700_000 });
     expect(hasWarning(result, "balance-sheet-mismatch")).toBe(false);
   });
@@ -28,24 +27,27 @@ describe("balance-sheet identity (assets = liabilities + equity)", () => {
     expect(hasWarning(result, "balance-sheet-mismatch")).toBe(true);
   });
 
-  it("does not run the check at all when total liabilities were not supplied", () => {
-    // The Day 2 form does not collect them, so there is nothing to compare against and the
-    // engine says nothing rather than inventing a figure.
-    expect(hasWarning(assessWith({}), "balance-sheet-mismatch")).toBe(false);
-  });
-
-  it("with derived equity, still catches liabilities the application never asked about", () => {
-    // Derived equity = 1.0M − 0.1M debt − 0.2M current liabilities = 0.7M.
-    // Reported total liabilities of 0.6M implies assets of 1.3M, a 30% gap: there are
-    // 0.3M of liabilities the form has no field for.
-    const result = assessWith({ totalLiabilitiesEur: 600_000 });
+  it("compares the two REPORTED figures, so the check can actually fail", () => {
+    // This test is the point of reporting equity rather than deriving it. While equity was
+    // computed as assets − debt − current liabilities, the identity held by construction and
+    // no mismatch could ever be detected.
+    const result = assessWith({ totalAssetsEur: 1_000_000, totalLiabilitiesEur: 100_000, equityEur: 100_000 });
     expect(hasWarning(result, "balance-sheet-mismatch")).toBe(true);
     const warning = result.dataQualityWarnings.find((w) => w.id === "balance-sheet-mismatch");
-    expect(warning?.detail).toContain("derived");
+    expect(warning?.detail).toContain("80.0%");
+  });
+
+  it("warns when current liabilities exceed total liabilities", () => {
+    const result = assessWith({ currentLiabilitiesEur: 400_000, totalLiabilitiesEur: 300_000 });
+    expect(hasWarning(result, "current-liabilities-exceed-total-liabilities")).toBe(true);
+  });
+
+  it("does not warn when current liabilities sit inside total liabilities", () => {
+    expect(hasWarning(assessWith({}), "current-liabilities-exceed-total-liabilities")).toBe(false);
   });
 });
 
-describe("the other four checks", () => {
+describe("the remaining checks", () => {
   it("warns when cash exceeds current assets", () => {
     expect(hasWarning(assessWith({ cashEur: 500_000, currentAssetsEur: 400_000 }), "cash-exceeds-current-assets")).toBe(true);
   });
@@ -82,6 +84,14 @@ describe("the other four checks", () => {
     expect(hasWarning(result, "debt-without-interest-expense")).toBe(false);
   });
 
+  it("warns when current liabilities are reported as zero", () => {
+    expect(hasWarning(assessWith({ currentLiabilitiesEur: 0 }), "no-current-liabilities")).toBe(true);
+  });
+
+  it("does not warn when current liabilities are present", () => {
+    expect(hasWarning(assessWith({}), "no-current-liabilities")).toBe(false);
+  });
+
   it("reports a healthy borrower with no warnings at all", () => {
     expect(assessWith({}).dataQualityWarnings).toEqual([]);
   });
@@ -90,7 +100,7 @@ describe("the other four checks", () => {
 describe("data quality is kept out of the score", () => {
   it("a balance-sheet mismatch does not change a single point", () => {
     const clean = assessWith({});
-    const mismatched = assessWith({ totalLiabilitiesEur: 10_000, equityEur: 700_000 });
+    const mismatched = assessWith({ totalLiabilitiesEur: 10_000 });
 
     expect(mismatched.dataQualityWarnings.length).toBeGreaterThan(0);
     expect(mismatched.score).toBe(clean.score);
@@ -110,6 +120,17 @@ describe("data quality is kept out of the score", () => {
     expect(result.dataQualityWarnings.length).toBeGreaterThan(0);
     expect(result.criticalFlags).toEqual([]);
     expect(result.gradeCapped).toBe(false);
+  });
+
+  it("the two zero-denominator cases warn but score full marks", () => {
+    const noInterest = assessWith({ existingDebtEur: 500_000, interestExpenseEur: 0 });
+    const noCurrentLiabs = assessWith({ currentLiabilitiesEur: 0 });
+
+    expect(noInterest.dataQualityWarnings.length).toBeGreaterThan(0);
+    expect(noInterest.factors.find((f) => f.id === "interestCoverage")?.points).toBe(20);
+
+    expect(noCurrentLiabs.dataQualityWarnings.length).toBeGreaterThan(0);
+    expect(noCurrentLiabs.factors.find((f) => f.id === "currentRatio")?.points).toBe(15);
   });
 
   it("every warning carries a label and a detail an analyst can act on", () => {

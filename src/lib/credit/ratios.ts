@@ -1,4 +1,4 @@
-import type { CreditInput, DisplayRatioId, EquityBasis, RatioId, RatioResult, ScoredRatioId } from "./types";
+import type { CreditInput, DisplayRatioId, RatioId, RatioResult, ScoredRatioId } from "./types";
 
 /**
  * RATIO CALCULATION.
@@ -77,37 +77,16 @@ function notProvided(id: RatioId, label: string, note: string): RatioResult {
 // =======================================================================================
 
 /**
- * Shareholders' equity, either as reported or derived.
+ * Shareholders' equity, taken straight from what the applicant reported.
  *
- * The Day 2 application form does not ask for equity or for total liabilities, so for a
- * form submission the engine derives it:
- *
- *     equity = total assets − interest-bearing debt − current liabilities
- *
- * That assumes the only liabilities are the interest-bearing debt and what falls due within
- * the year. It is a genuine simplification: a business with long-term non-debt liabilities
- * (large provisions, deferred tax, lease obligations outside the debt figure) will have its
- * equity OVERSTATED, which makes negative equity less likely to be detected than it should
- * be. The derivation is therefore labelled wherever it is used, and supplying `equityEur`
- * replaces it with the real figure.
+ * There is deliberately no calculation here. An earlier version derived equity as
+ * `total assets − interest-bearing debt − current liabilities`, which is wrong in both
+ * directions: interest-bearing debt overlaps with current liabilities (the current portion
+ * of a term loan sits in both), and current liabilities exclude long-term non-debt items
+ * such as provisions, deferred tax and lease obligations. The net effect usually OVERSTATES
+ * equity - the dangerous direction, because it makes the negative-equity critical flag fire
+ * less often than it should. The form now asks for the figure instead.
  */
-export function resolveEquity(input: CreditInput): EquityBasis {
-  if (typeof input.equityEur === "number" && Number.isFinite(input.equityEur)) {
-    return {
-      valueEur: input.equityEur,
-      derived: false,
-      explanation: "Taken from the reported balance sheet.",
-    };
-  }
-  return {
-    valueEur: input.totalAssetsEur - input.existingDebtEur - input.currentLiabilitiesEur,
-    derived: true,
-    explanation:
-      "Derived as total assets − interest-bearing debt − current liabilities, because the " +
-      "application does not ask for equity directly. Long-term liabilities other than debt " +
-      "would make this an overstatement.",
-  };
-}
 
 // =======================================================================================
 // Scored ratios
@@ -140,7 +119,7 @@ export function calculateScoredRatios(input: CreditInput): Record<ScoredRatioId,
       const id = "interestCoverage" as const;
       const label = "Current interest coverage";
       if (input.interestExpenseEur === 0) {
-        // No debt and no interest is the genuinely best case, and scores full marks.
+        // No debt and no interest is the genuinely best case.
         if (input.existingDebtEur === 0) {
           return {
             id,
@@ -151,15 +130,24 @@ export function calculateScoredRatios(input: CreditInput): Record<ScoredRatioId,
             note: "No interest-bearing debt and no interest expense.",
           };
         }
-        // Debt but no interest is not a strength, it is an unanswered question. It scores
-        // zero and raises a data-quality warning rather than awarding 20 points on a figure
-        // the engine has just flagged as doubtful. Under-scoring is recoverable - the
-        // analyst asks for the real number; over-scoring is not.
-        return notMeaningful(
+        // Debt outstanding but no interest reported.
+        //
+        // This is scored on the figures AS REPORTED - they show no interest burden, so the
+        // factor scores full marks - and a data-quality warning asks the analyst to confirm
+        // the debt really is interest-free. Docking 20 points here would be scoring a
+        // suspected data-entry error as though it were credit risk, which is precisely the
+        // mixing of concerns the engine keeps apart everywhere else. The analyst gets both
+        // the score and the doubt, and can act on either.
+        return {
           id,
           label,
-          "Debt is reported but interest expense is zero, so coverage cannot be calculated.",
-        );
+          value: null,
+          display: "No reported interest expense",
+          status: "no-interest-reported",
+          note:
+            "Debt is outstanding but the reported interest expense is zero. Scored on the " +
+            "figures as given; the figure needs confirming.",
+        };
       }
       const value = divide(input.ebitdaEur, input.interestExpenseEur);
       return value === null
@@ -171,12 +159,24 @@ export function calculateScoredRatios(input: CreditInput): Record<ScoredRatioId,
     currentRatio: (() => {
       const id = "currentRatio" as const;
       const label = "Liquidity";
+      // Nothing due within the year means there is no denominator - and, on the figures as
+      // reported, no short-term obligation to be unable to meet. That is the best possible
+      // liquidity position, not the worst, so it scores full marks rather than zero. A
+      // literal zero is unusual enough to be worth checking, so it also raises a
+      // data-quality warning; the doubt belongs there, not in the score.
+      if (input.currentLiabilitiesEur === 0) {
+        return {
+          id,
+          label,
+          value: null,
+          display: "No current liabilities",
+          status: "no-current-liabilities",
+          note: "Nothing reported as falling due within twelve months.",
+        };
+      }
       const value = divide(input.currentAssetsEur, input.currentLiabilitiesEur);
-      // Zero current liabilities is treated as unmeasurable rather than perfect. A trading
-      // business always owes something within the year, so a literal zero nearly always
-      // means the field was left empty, and the engine should not hand out 15 points for it.
       return value === null
-        ? notMeaningful(id, label, "No current liabilities reported, so the current ratio cannot be calculated.")
+        ? notMeaningful(id, label, "The current ratio could not be calculated.")
         : ok(id, label, value, plain(value));
     })(),
 
@@ -261,7 +261,7 @@ export function calculateScoredRatios(input: CreditInput): Record<ScoredRatioId,
  * CURRENT DEBT/EBITDA is shown beside the pro-forma figure so the analyst can see what the
  * requested loan actually changes. Only the pro-forma version is scored.
  */
-export function calculateDisplayRatios(input: CreditInput, equity: EquityBasis): Record<DisplayRatioId, RatioResult> {
+export function calculateDisplayRatios(input: CreditInput): Record<DisplayRatioId, RatioResult> {
   return {
     currentLeverage: (() => {
       const id = "currentLeverage" as const;
@@ -286,10 +286,10 @@ export function calculateDisplayRatios(input: CreditInput, equity: EquityBasis):
       // Negative or zero equity makes ROE meaningless: dividing a profit by a negative
       // equity base produces a negative percentage that looks like a loss, and dividing by
       // a near-zero base produces a spectacular number for a nearly insolvent business.
-      if (equity.valueEur <= 0) {
+      if (input.equityEur <= 0) {
         return notMeaningful(id, label, "Equity is zero or negative, so return on equity carries no meaning.");
       }
-      const value = divide(input.netIncomeEur, equity.valueEur);
+      const value = divide(input.netIncomeEur, input.equityEur);
       return value === null ? notMeaningful(id, label, "Not calculable.") : ok(id, label, value, percent(value));
     })(),
 

@@ -22,7 +22,6 @@ export type {
   CriticalFlagId,
   DataQualityWarning,
   DataQualityWarningId,
-  EquityBasis,
   ScoredRatioId,
   DisplayRatioId,
 } from "./types";

@@ -53,20 +53,78 @@ describe("zero interest expense", () => {
     expect(hasWarning(result, "debt-without-interest-expense")).toBe(false);
   });
 
-  it("with debt outstanding, scores zero and raises a data-quality warning", () => {
-    // A deliberate, conservative choice: the engine will not award 20 points on a figure it
-    // is simultaneously flagging as doubtful. Under-scoring is recoverable, over-scoring is not.
+  it("with debt outstanding, scores full marks on the figures as reported", () => {
+    // The figures show no interest burden, so the factor scores what the figures say. The
+    // doubt about whether they are right is raised separately, as a data-quality warning:
+    // docking 20 points would be scoring a suspected typing error as though it were credit
+    // risk, which is exactly the mixing of concerns the engine avoids everywhere else.
     const result = assessWith({ interestExpenseEur: 0, existingDebtEur: 500_000 });
     const factor = factorFor(result, "interestCoverage");
-    expect(factor.ratio.display).toBe(NOT_MEANINGFUL);
-    expect(factor.points).toBe(0);
+    expect(factor.ratio.display).toBe("No reported interest expense");
+    expect(factor.ratio.status).toBe("no-interest-reported");
+    expect(factor.points).toBe(20);
+    expect(factor.band).toBe("No interest reported");
+  });
+
+  it("with debt outstanding, raises a warning telling the analyst to verify the figure", () => {
+    const result = assessWith({ interestExpenseEur: 0, existingDebtEur: 500_000 });
     expect(hasWarning(result, "debt-without-interest-expense")).toBe(true);
+    const warning = result.dataQualityWarnings.find((w) => w.id === "debt-without-interest-expense");
+    expect(warning?.detail).toMatch(/confirm/i);
+    expect(warning?.detail).toMatch(/interest-free/i);
   });
 
   it("with debt outstanding, does NOT raise the coverage-below-1 critical flag", () => {
     // There is no coverage figure, so there is nothing to say it is below 1.0x.
     const result = assessWith({ interestExpenseEur: 0, existingDebtEur: 500_000 });
     expect(hasFlag(result, "interest-coverage-below-1")).toBe(false);
+    expect(result.gradeCapped).toBe(false);
+  });
+
+  it("scores the same either way, because the score follows the reported figures", () => {
+    const noDebt = assessWith({ interestExpenseEur: 0, existingDebtEur: 0 });
+    const debtNoInterest = assessWith({ interestExpenseEur: 0, existingDebtEur: 500_000 });
+    expect(pointsFor(noDebt, "interestCoverage")).toBe(20);
+    expect(pointsFor(debtNoInterest, "interestCoverage")).toBe(20);
+    // Only the warning distinguishes them.
+    expect(hasWarning(noDebt, "debt-without-interest-expense")).toBe(false);
+    expect(hasWarning(debtNoInterest, "debt-without-interest-expense")).toBe(true);
+  });
+});
+
+describe("zero current liabilities", () => {
+  it("scores full liquidity marks rather than zero", () => {
+    // A zero denominator is not the worst liquidity position: on the figures as reported,
+    // nothing falls due within the year, which is the strongest position there is.
+    const result = assessWith({ currentLiabilitiesEur: 0 });
+    const factor = factorFor(result, "currentRatio");
+    expect(factor.ratio.display).toBe("No current liabilities");
+    expect(factor.ratio.status).toBe("no-current-liabilities");
+    expect(factor.points).toBe(15);
+    expect(factor.band).toBe("No current liabilities");
+  });
+
+  it("produces no Infinity or NaN", () => {
+    const result = assessWith({ currentLiabilitiesEur: 0 });
+    expect(factorFor(result, "currentRatio").ratio.value).toBeNull();
+    expect(findBadNumbers(result)).toEqual([]);
+  });
+
+  it("raises a data-quality warning asking for the figure to be confirmed", () => {
+    const result = assessWith({ currentLiabilitiesEur: 0 });
+    expect(hasWarning(result, "no-current-liabilities")).toBe(true);
+    expect(result.dataQualityWarnings.find((w) => w.id === "no-current-liabilities")?.detail).toMatch(/confirm/i);
+  });
+
+  it("does not raise the current-ratio critical flag", () => {
+    const result = assessWith({ currentLiabilitiesEur: 0 });
+    expect(hasFlag(result, "current-ratio-below-0-8")).toBe(false);
+    expect(result.gradeCapped).toBe(false);
+  });
+
+  it("describes it as a strength in its own terms", () => {
+    const result = assessWith({ currentLiabilitiesEur: 0 });
+    expect(result.strengths).toContain("Nothing is reported as falling due within twelve months.");
   });
 });
 
@@ -89,10 +147,15 @@ describe("negative equity", () => {
     expect(result.gradeCapped).toBe(true);
   });
 
-  it("says whether equity was reported or derived", () => {
-    expect(assessWith({ equityEur: -250_000 }).equity.derived).toBe(false);
-    expect(assessWith({}).equity.derived).toBe(true);
-    expect(assessWith({}).equity.explanation).toContain("Derived");
+  it("reports the equity figure the applicant gave, unchanged", () => {
+    expect(assessWith({ equityEur: -250_000 }).equityEur).toBe(-250_000);
+    expect(assessWith({ equityEur: 12_345 }).equityEur).toBe(12_345);
+  });
+
+  it("names the reported figure in the flag's detail", () => {
+    const flag = assessWith({ equityEur: -250_000 }).criticalFlags.find((f) => f.id === "negative-equity");
+    expect(flag?.detail).toMatch(/250,000/);
+    expect(flag?.detail).toMatch(/[Rr]eported/);
   });
 });
 
@@ -126,14 +189,16 @@ describe("division by zero never escapes", () => {
     { name: "no interest expense", overrides: { interestExpenseEur: 0 } },
     { name: "zero EBITDA", overrides: { ebitdaEur: 0 } },
     { name: "zero prior-year revenue", overrides: { revenuePriorYearEur: 0 } },
+    { name: "no total liabilities and no equity", overrides: { totalLiabilitiesEur: 0, equityEur: 0 } },
     { name: "every figure zero", overrides: {
         loanAmountEur: 0, revenueEur: 0, revenuePriorYearEur: 0, ebitdaEur: 0, netIncomeEur: 0,
         interestExpenseEur: 0, existingDebtEur: 0, totalAssetsEur: 0, currentAssetsEur: 0,
-        currentLiabilitiesEur: 0, yearsInBusiness: 0,
+        currentLiabilitiesEur: 0, totalLiabilitiesEur: 0, equityEur: 0, yearsInBusiness: 0,
       } },
     { name: "negative everything", overrides: {
         ebitdaEur: -500_000, netIncomeEur: -900_000, revenueEur: 1, revenuePriorYearEur: 10_000_000,
         totalAssetsEur: 1, currentAssetsEur: 0, currentLiabilitiesEur: 5_000_000,
+        totalLiabilitiesEur: 8_000_000, equityEur: -7_999_999,
       } },
   ];
 

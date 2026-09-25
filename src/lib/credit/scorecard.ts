@@ -128,13 +128,18 @@ export const SCORECARD: readonly FactorConfig[] = [
       { bound: 1.5, points: 2, label: "1.5–2×" },
       { bound: -Infinity, points: 0, label: "< 1.5×" },
     ],
-    // No debt and no interest expense is the best possible state, not a missing value.
-    pointsWhenUnscoreable: { "no-debt": 20 },
-    unscoreableBandLabel: { "no-debt": "No debt", "not-meaningful": "No interest reported" },
-    strength: (r) =>
-      r.status === "no-debt"
-        ? `The business carries no interest-bearing debt today.`
-        : `Current Interest Coverage of ${r.display} indicates strong interest-payment capacity.`,
+    // Both zero-interest states score full marks, because on the figures as reported there
+    // is no interest burden to cover. The second one is simultaneously flagged by the
+    // data-quality checks, which is where doubt about a figure belongs - not in the score.
+    pointsWhenUnscoreable: { "no-debt": 20, "no-interest-reported": 20 },
+    unscoreableBandLabel: { "no-debt": "No debt", "no-interest-reported": "No interest reported" },
+    strength: (r) => {
+      if (r.status === "no-debt") return `The business carries no interest-bearing debt today.`;
+      if (r.status === "no-interest-reported") {
+        return `No interest expense is reported against the outstanding debt, so nothing has to be covered on the figures given.`;
+      }
+      return `Current Interest Coverage of ${r.display} indicates strong interest-payment capacity.`;
+    },
     risk: (r) =>
       r.status === "ok"
         ? `Current Interest Coverage of ${r.display} leaves little room before interest payments are at risk.`
@@ -157,8 +162,14 @@ export const SCORECARD: readonly FactorConfig[] = [
       { bound: 1.0, points: 4, label: "1.0–1.2" },
       { bound: -Infinity, points: 0, label: "< 1.0" },
     ],
-    unscoreableBandLabel: { "not-meaningful": "No current liabilities" },
-    strength: (r) => `Current Ratio of ${r.display} indicates adequate short-term liquidity.`,
+    // Nothing falling due within the year is the strongest liquidity position there is, not
+    // an unmeasurable one. A zero denominator must not be read as the worst case.
+    pointsWhenUnscoreable: { "no-current-liabilities": 15 },
+    unscoreableBandLabel: { "no-current-liabilities": "No current liabilities" },
+    strength: (r) =>
+      r.status === "no-current-liabilities"
+        ? `Nothing is reported as falling due within twelve months.`
+        : `Current Ratio of ${r.display} indicates adequate short-term liquidity.`,
     risk: (r) =>
       r.status === "ok"
         ? `Current Ratio of ${r.display} means short-term liabilities are close to, or above, short-term assets.`

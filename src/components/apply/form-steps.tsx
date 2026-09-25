@@ -255,6 +255,13 @@ export function FinancialsStep({ values, errors, onValueChange }: StepProps) {
         {money("totalAssetsEur", "Total assets", "3500000", "Drives the capital-structure factor.")}
         {money("currentAssetsEur", "Current assets", "1400000", "Stock, receivables and cash.")}
         {money("currentLiabilitiesEur", "Current liabilities", "900000", "Due within twelve months.")}
+        {money("totalLiabilitiesEur", "Total liabilities", "2100000", "Everything owed, short and long term.")}
+        {money(
+          "equityEur",
+          "Shareholders' equity",
+          "1400000",
+          "As reported. Enter a minus sign if equity is negative.",
+        )}
       </section>
     </div>
   );

@@ -61,10 +61,15 @@ describe("Nordwerk Precision GmbH: the reference case", () => {
     expect(summed).toBe(expected.reduce((total, [, , points]) => total + points, 0));
   });
 
-  it("derives equity of EUR 1.4M from the reported figures", () => {
-    // 3.5M assets − 1.2M debt − 0.9M current liabilities
-    expect(result.equity.valueEur).toBe(1_400_000);
-    expect(result.equity.derived).toBe(true);
+  it("uses the reported equity of EUR 1.4M rather than deriving one", () => {
+    expect(result.equityEur).toBe(1_400_000);
+    expect(result.equityEur).toBe(NORDWERK_INPUT.equityEur);
+  });
+
+  it("has a balance sheet that balances, so raises no data-quality warning", () => {
+    // 2.1M liabilities + 1.4M equity = 3.5M total assets
+    expect(NORDWERK_INPUT.totalLiabilitiesEur + NORDWERK_INPUT.equityEur).toBe(NORDWERK_INPUT.totalAssetsEur);
+    expect(result.dataQualityWarnings).toEqual([]);
   });
 
   it("calculates the underlying ratios to the agreed values", () => {
@@ -132,6 +137,8 @@ describe("Nordwerk stays consistent across the app", () => {
     expect(n(SAMPLE_APPLICATION.totalAssetsEur)).toBe(NORDWERK_INPUT.totalAssetsEur);
     expect(n(SAMPLE_APPLICATION.currentAssetsEur)).toBe(NORDWERK_INPUT.currentAssetsEur);
     expect(n(SAMPLE_APPLICATION.currentLiabilitiesEur)).toBe(NORDWERK_INPUT.currentLiabilitiesEur);
+    expect(n(SAMPLE_APPLICATION.totalLiabilitiesEur)).toBe(NORDWERK_INPUT.totalLiabilitiesEur);
+    expect(n(SAMPLE_APPLICATION.equityEur)).toBe(NORDWERK_INPUT.equityEur);
     expect(n(SAMPLE_APPLICATION.loanAmountEur)).toBe(NORDWERK_INPUT.loanAmountEur);
 
     // The form asks for the founding year; the engine wants a duration. They must agree.

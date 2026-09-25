@@ -54,11 +54,25 @@ describe("critical flags", () => {
     expect(hasFlag(assessWith({ equityEur: -100_000 }), "negative-equity")).toBe(true);
   });
 
-  it("raises a flag when derived equity is negative", () => {
-    // 1.0M assets − 0.9M debt − 0.2M current liabilities = −0.1M
-    const result = assessWith({ totalAssetsEur: 1_000_000, existingDebtEur: 900_000, currentLiabilitiesEur: 200_000 });
-    expect(result.equity.valueEur).toBe(-100_000);
-    expect(result.equity.derived).toBe(true);
+  it("uses the REPORTED equity, not one worked out from debt and current liabilities", () => {
+    // Debt and current liabilities together (0.9M + 0.2M) exceed total assets (1.0M), so the
+    // old derivation would have produced −0.1M and raised the flag. The reported equity is
+    // positive, and the reported figure is what counts.
+    const result = assessWith({
+      totalAssetsEur: 1_000_000,
+      existingDebtEur: 900_000,
+      currentLiabilitiesEur: 200_000,
+      totalLiabilitiesEur: 950_000,
+      equityEur: 50_000,
+    });
+    expect(result.equityEur).toBe(50_000);
+    expect(hasFlag(result, "negative-equity")).toBe(false);
+  });
+
+  it("raises the flag on reported negative equity even when assets exceed debt", () => {
+    // The mirror case: the old derivation would have said 1.0M − 0.1M − 0.2M = +0.7M and
+    // missed the flag entirely. Long-term non-debt liabilities are why.
+    const result = assessWith({ totalLiabilitiesEur: 1_200_000, equityEur: -200_000 });
     expect(hasFlag(result, "negative-equity")).toBe(true);
   });
 
@@ -85,12 +99,17 @@ describe("critical flags", () => {
     expect(hasFlag(result, "current-ratio-below-0-8")).toBe(false);
   });
 
-  it("does not raise coverage or liquidity flags from a ratio that could not be calculated", () => {
-    // No interest expense and no current liabilities: neither ratio has a value, so neither
+  it("does not raise coverage or liquidity flags from a ratio that has no value", () => {
+    // No interest expense and no current liabilities: neither ratio has a number, so neither
     // is evidence of anything. An unmeasurable ratio must not masquerade as a bad one.
     const result = assessWith({ interestExpenseEur: 0, existingDebtEur: 0, currentLiabilitiesEur: 0 });
     expect(hasFlag(result, "interest-coverage-below-1")).toBe(false);
     expect(hasFlag(result, "current-ratio-below-0-8")).toBe(false);
+  });
+
+  it("does not raise the coverage flag when debt is reported with no interest", () => {
+    const result = assessWith({ interestExpenseEur: 0, existingDebtEur: 500_000 });
+    expect(hasFlag(result, "interest-coverage-below-1")).toBe(false);
   });
 
   it("raises no flags for a healthy borrower", () => {
@@ -113,6 +132,11 @@ describe("the grade cap", () => {
     const capped = assessWith({ equityEur: -100_000 });
     const clean = assessWith({});
     expect(capped.score).toBe(clean.score);
+  });
+
+  it("echoes the reported equity back in the assessment", () => {
+    expect(assessWith({ equityEur: -100_000 }).equityEur).toBe(-100_000);
+    expect(assessWith({}).equityEur).toBe(700_000);
   });
 
   it("does not improve a borrower who is already worse than High", () => {

@@ -50,6 +50,8 @@ export const SAMPLE_APPLICATION: ApplicationFormValues = {
   totalAssetsEur: "3500000",
   currentAssetsEur: "1400000",
   currentLiabilitiesEur: "900000",
+  totalLiabilitiesEur: "2100000",
+  equityEur: "1400000",
 
   // Step 4: review and submit. Left unticked on purpose: confirming the figures are
   // accurate is the applicant's act, and a demo button should not perform it for them.

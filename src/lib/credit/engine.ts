@@ -1,15 +1,9 @@
 import { CAPPED_GRADE_ID, MODEL_DISCLAIMER, RISK_GRADES, gradeForScore } from "@/lib/risk-grades";
+import { formatEur } from "@/lib/format";
 import { RISK_THRESHOLD, SCORECARD, SCORECARD_VERSION, STRENGTH_THRESHOLD, bandFor, type FactorConfig } from "./scorecard";
-import { calculateDisplayRatios, calculateScoredRatios, resolveEquity } from "./ratios";
+import { calculateDisplayRatios, calculateScoredRatios } from "./ratios";
 import { checkDataQuality } from "./data-quality";
-import type {
-  CreditAssessment,
-  CreditInput,
-  CriticalFlag,
-  EquityBasis,
-  FactorResult,
-  RatioResult,
-} from "./types";
+import type { CreditAssessment, CreditInput, CriticalFlag, FactorResult, RatioResult } from "./types";
 
 /**
  * THE CREDIT ENGINE.
@@ -86,7 +80,6 @@ function scoreFactor(config: FactorConfig, ratio: RatioResult): FactorResult {
  */
 function findCriticalFlags(
   input: CreditInput,
-  equity: EquityBasis,
   coverage: RatioResult,
   currentRatio: RatioResult,
 ): CriticalFlag[] {
@@ -100,13 +93,14 @@ function findCriticalFlags(
     });
   }
 
-  if (equity.valueEur < 0) {
+  // Uses the equity the applicant REPORTED, not a figure worked out from debt and current
+  // liabilities. A derived number would overstate equity wherever long-term non-debt
+  // liabilities exist, and this flag would then fire less often than it should.
+  if (input.equityEur < 0) {
     flags.push({
       id: "negative-equity",
       label: "Negative shareholders' equity",
-      detail:
-        `Liabilities exceed assets by ${Math.abs(Math.round(equity.valueEur)).toLocaleString("en-IE")} EUR.` +
-        (equity.derived ? " Equity is derived from the reported figures, not taken from the accounts." : ""),
+      detail: `Reported shareholders' equity is ${formatEur(input.equityEur)}: liabilities exceed assets.`,
     });
   }
 
@@ -205,11 +199,9 @@ function buildNarrative(factors: FactorResult[]) {
 // =======================================================================================
 
 export function assess(input: CreditInput): CreditAssessment {
-  // 1. Ratios. Equity is resolved first because return on equity and the negative-equity
-  //    flag both depend on it.
-  const equity = resolveEquity(input);
+  // 1. Ratios.
   const scoredRatios = calculateScoredRatios(input);
-  const displayRatios = calculateDisplayRatios(input, equity);
+  const displayRatios = calculateDisplayRatios(input);
 
   // 2. Score. Iterating over SCORECARD rather than over the ratios means the configuration
   //    decides which factors exist and in what order, here and on every screen.
@@ -217,14 +209,14 @@ export function assess(input: CreditInput): CreditAssessment {
   const score = factors.reduce((total, factor) => total + factor.points, 0);
 
   // 3. Flags and cap.
-  const criticalFlags = findCriticalFlags(input, equity, scoredRatios.interestCoverage, scoredRatios.currentRatio);
+  const criticalFlags = findCriticalFlags(input, scoredRatios.interestCoverage, scoredRatios.currentRatio);
   const { grade, uncappedGrade, gradeCapped } = applyGradeCap(score, criticalFlags.length > 0);
 
   // 4. Narrative.
   const { strengths, risks } = buildNarrative(factors);
 
   // 5. Data quality, which deliberately played no part in any of the above.
-  const dataQualityWarnings = checkDataQuality(input, equity);
+  const dataQualityWarnings = checkDataQuality(input);
 
   return {
     modelVersion: SCORECARD_VERSION,
@@ -238,7 +230,7 @@ export function assess(input: CreditInput): CreditAssessment {
     strengths,
     risks,
     dataQualityWarnings,
-    equity,
+    equityEur: input.equityEur,
     disclaimer: MODEL_DISCLAIMER,
   };
 }
