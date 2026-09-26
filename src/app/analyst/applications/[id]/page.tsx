@@ -11,6 +11,7 @@ import { FigureList, Section, type Figure } from "@/components/analyst/detail-se
 import { DisplayRatioList, ScoredRatioList } from "@/components/analyst/ratio-list";
 import { ScoreBreakdown } from "@/components/analyst/score-breakdown";
 import { CriticalFlags, DataQuality, Narrative } from "@/components/analyst/findings";
+import { DecisionPanel } from "@/components/analyst/decision-panel";
 import { getApplicationForAnalyst, type ApplicationRecord } from "@/lib/applications/repository";
 import { COUNTRIES, INDUSTRIES, LEGAL_FORMS, LOAN_PURPOSES } from "@/lib/applications/options";
 import { STATUS_META } from "@/lib/applications/status";
@@ -267,23 +268,26 @@ export default async function BorrowerAnalysisPage({ params }: { params: Promise
           </>
         )}
 
-        {/* -------------------------------------------------------- STATUS (read only) -- */}
-        <Section title="Status" description="Recording a decision is not part of this screen yet.">
-          <div className="rounded-md border border-border bg-card p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <StatusBadge status={record.status} />
-              <span className="text-[15px] text-muted-foreground">{statusMeta.applicantText}</span>
-            </div>
-            {record.analystMessage && (
-              <div className="mt-4 border-t border-border pt-3">
-                <p className="text-sm text-muted-foreground">Message sent to the applicant</p>
-                <p className="mt-1 whitespace-pre-line text-[15px] leading-relaxed">{record.analystMessage}</p>
-              </div>
-            )}
-            <p className="mt-4 text-[13px] text-muted-foreground">
-              Last updated {formatDateTime(record.updatedAt)} UTC · Submitted {formatDateTime(record.submittedAt)} UTC
-            </p>
-          </div>
+        {/* ------------------------------------------------------------- DECISION -- */}
+        <Section
+          id="decision"
+          title="Decision"
+          description="The analyst records the outcome. The scorecard never does: it produces analysis, and a person decides."
+        >
+          <DecisionPanel
+            applicationId={record.id}
+            companyName={record.companyName}
+            currentStatus={record.status}
+            currentMessage={record.analystMessage}
+          />
+          <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground">
+            The applicant sees the status and any message on their own status page as soon as it is saved. They never
+            see the score, the grade or their financial figures there.{" "}
+            <span className="text-foreground">Currently: {statusMeta.applicantText}</span>
+          </p>
+          <p className="mt-2 text-[13px] text-muted-foreground">
+            Last updated {formatDateTime(record.updatedAt)} UTC · Submitted {formatDateTime(record.submittedAt)} UTC
+          </p>
         </Section>
 
         <p className="border-t border-border pt-6 text-[13px] leading-relaxed text-muted-foreground">

@@ -36,10 +36,29 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${plexSans.variable} ${plexCondensed.variable}`}>
+    // data-scroll-behavior="smooth" tells the Next.js router that the smooth scrolling set
+    // in globals.css is deliberate, so it stops warning that its own scroll restoration may
+    // be affected by it. It is the attribute Next.js asks for, not a workaround.
+    <html
+      lang="en"
+      data-scroll-behavior="smooth"
+      className={`${plexSans.variable} ${plexCondensed.variable}`}
+    >
       <body className="flex min-h-dvh flex-col">
+        {/*
+          Skip link: visually hidden until focused, so a keyboard user can jump past the
+          header instead of tabbing through the navigation on every page.
+        */}
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
+        >
+          Skip to main content
+        </a>
         <SiteHeader />
-        <main className="flex-1">{children}</main>
+        <main id="main" className="flex-1">
+          {children}
+        </main>
         <SiteFooter />
       </body>
     </html>

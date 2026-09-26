@@ -11,7 +11,8 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "seed:demo": "node --env-file=.env.local scripts/seed-demo-data.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

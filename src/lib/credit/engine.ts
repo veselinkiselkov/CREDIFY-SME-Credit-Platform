@@ -1,6 +1,14 @@
 import { CAPPED_GRADE_ID, MODEL_DISCLAIMER, RISK_GRADES, gradeForScore } from "@/lib/risk-grades";
 import { formatEur } from "@/lib/format";
-import { RISK_THRESHOLD, SCORECARD, SCORECARD_VERSION, STRENGTH_THRESHOLD, bandFor, type FactorConfig } from "./scorecard";
+import {
+  RISK_THRESHOLD,
+  SCORECARD,
+  SCORECARD_VERSION,
+  STRENGTH_THRESHOLD,
+  bandFor,
+  criticalFlagRule,
+  type FactorConfig,
+} from "./scorecard";
 import { calculateDisplayRatios, calculateScoredRatios } from "./ratios";
 import { checkDataQuality } from "./data-quality";
 import type { CreditAssessment, CreditInput, CriticalFlag, FactorResult, RatioResult } from "./types";
@@ -85,10 +93,11 @@ function findCriticalFlags(
 ): CriticalFlag[] {
   const flags: CriticalFlag[] = [];
 
-  if (input.ebitdaEur <= 0) {
+  const ebitdaRule = criticalFlagRule("non-positive-ebitda");
+  if (input.ebitdaEur <= (ebitdaRule.threshold ?? 0)) {
     flags.push({
-      id: "non-positive-ebitda",
-      label: "EBITDA is zero or negative",
+      id: ebitdaRule.id,
+      label: ebitdaRule.label,
       detail: "The business does not generate operating earnings to service debt from.",
     });
   }
@@ -96,26 +105,29 @@ function findCriticalFlags(
   // Uses the equity the applicant REPORTED, not a figure worked out from debt and current
   // liabilities. A derived number would overstate equity wherever long-term non-debt
   // liabilities exist, and this flag would then fire less often than it should.
-  if (input.equityEur < 0) {
+  const equityRule = criticalFlagRule("negative-equity");
+  if (input.equityEur < (equityRule.threshold ?? 0)) {
     flags.push({
-      id: "negative-equity",
-      label: "Negative shareholders' equity",
+      id: equityRule.id,
+      label: equityRule.label,
       detail: `Reported shareholders' equity is ${formatEur(input.equityEur)}: liabilities exceed assets.`,
     });
   }
 
-  if (coverage.status === "ok" && coverage.value !== null && coverage.value < 1.0) {
+  const coverageRule = criticalFlagRule("interest-coverage-below-1");
+  if (coverage.status === "ok" && coverage.value !== null && coverage.value < (coverageRule.threshold ?? 0)) {
     flags.push({
-      id: "interest-coverage-below-1",
-      label: "Interest coverage below 1.0×",
+      id: coverageRule.id,
+      label: coverageRule.label,
       detail: `EBITDA of ${coverage.display} does not cover the current interest bill.`,
     });
   }
 
-  if (currentRatio.status === "ok" && currentRatio.value !== null && currentRatio.value < 0.8) {
+  const liquidityRule = criticalFlagRule("current-ratio-below-0-8");
+  if (currentRatio.status === "ok" && currentRatio.value !== null && currentRatio.value < (liquidityRule.threshold ?? 0)) {
     flags.push({
-      id: "current-ratio-below-0-8",
-      label: "Current ratio below 0.8",
+      id: liquidityRule.id,
+      label: liquidityRule.label,
       detail: `Short-term liabilities substantially exceed short-term assets (${currentRatio.display}).`,
     });
   }

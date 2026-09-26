@@ -1,104 +1,327 @@
 # Credify
 
-An SME credit decisioning platform, built as a portfolio project.
+**An SME credit decisioning platform: a small business applies for a loan, a transparent
+scorecard turns its accounts into a risk grade with the reasoning attached, and a bank credit
+analyst makes the decision.**
 
-A small business applies for a loan. Credify calculates credit ratios and a transparent, rule-based risk score. A bank credit analyst reviews the analysis and makes the decision.
+**Live demo → <https://credify-sme-credit-platform.vercel.app>**
 
-> **Model scope.** Credify's scorecard is an illustrative decision-support model built for demonstration. It is not a real bank underwriting model. It never approves or rejects an application: a credit analyst reviews every case and makes the final decision. All companies and figures are fictional.
+> **Everything here is fictional.** Every company, person, financial figure and decision in
+> this project is invented. Credify's scorecard is an **illustrative decision-support model
+> built for demonstration**. It is not a real bank underwriting model, not a regulatory
+> credit model, and not an automatic approval engine. It never approves or rejects an
+> application: a credit analyst reviews every case and makes the final decision.
 
-## Run it locally
+---
 
-Requires Node.js 20.9 or newer.
+## The business problem
 
-```bash
-npm install      # download dependencies (first time only)
-cp .env.example .env.local   # then paste in your Supabase credentials
-npm run dev      # start the development server at http://localhost:3000
-npm test         # run the credit-engine test suite
-npm run build    # check that the production build succeeds before pushing
+A small manufacturer needs €600,000 for a machining centre. They send their accounts to a
+bank. Somebody there has to turn twelve financial figures into a credit decision — and then
+justify it, to the borrower if it is refused, to their own credit committee, and to a
+regulator reading the file two years later.
+
+That work is mostly assembly: pulling figures into ratios, comparing them against policy,
+writing up what stands out. It is slow, inconsistent between analysts, and hard to audit
+after the fact.
+
+**Credify does the assembly and leaves the judgement.** It calculates the ratios, scores them
+against a published scorecard, flags what a lender would flag, and writes the reasoning in
+plain English — so the analyst spends their time on the decision rather than on the
+spreadsheet. Every number traces back to the figure that produced it.
+
+---
+
+## The product
+
+```
+  APPLICANT                          CREDIFY                        ANALYST
+  ─────────                          ───────                        ───────
+  Four-step          ──────►   Validate, store, score     ──────►   Dashboard: portfolio,
+  application                  (deterministic engine)                grades, filters
+      │                                  │                               │
+      │                                  ▼                               ▼
+      │                          Ratios · 100-point score        Borrower analysis:
+      │                          Risk grade · critical flags     every point explained
+      │                          Strengths · risks                       │
+      ▼                          Data-quality warnings                   ▼
+  Private status   ◄──────────────────────────────────────────    Record a decision
+  page (status +                                                  (request info /
+  analyst message only)                                            approve / decline)
 ```
 
-`npm test` needs no database and no environment variables: the credit engine is a pure
-function, so the suite is figures in, numbers out.
+### Applicant experience
 
-The landing page, the application form and its validation all run without a database. Only
-**submitting** an application, and the two pages that read one back, need Supabase. Without
-credentials those screens show a clear "not connected" panel rather than an error.
+- **Four-step form** — company, loan request, financial figures, review. Validated by one
+  Zod schema that runs per step in the browser and again in full on the server.
+- **"Fill with sample data"** populates every step with the demo borrower, so a reviewer
+  never has to invent twelve financial figures.
+- **Confirmation** gives a quotable reference (`CR-2026-7K4QP2`) and a private status link.
+- **Status page** shows the reference, the status and the analyst's message — and nothing
+  else. No score, no grade, no financial figures.
 
-Setting Supabase up takes about five minutes and is done by hand, once:
-**[`supabase/README.md`](./supabase/README.md)**.
+### Analyst experience
 
-## Tech stack
+- **Dashboard** — portfolio KPIs, a risk-grade distribution chart, and a filterable,
+  sortable table of every application.
+- **Borrower analysis** — the company, the request, the reported figures, every ratio with a
+  plain-English meaning, a factor-by-factor score breakdown including **points forgone**,
+  strengths and risks, critical flags, and data-quality warnings kept separate from credit
+  risk.
+- **Decision** — request information, approve, or decline, each with a confirmation step and
+  an applicant-facing message.
+
+---
+
+## The credit model
+
+A 100-point scorecard over eight factors. **The whole model is published at
+[`/methodology`](https://credify-sme-credit-platform.vercel.app/methodology), generated from
+the engine's own configuration** — so the documentation cannot drift away from the code.
+
+| Factor | Points | Measures |
+|---|---:|---|
+| Leverage after the loan | 25 | `(existing debt + requested loan) / EBITDA` — **pro forma** |
+| Current interest coverage | 20 | `EBITDA / current interest expense` — **not a DSCR** |
+| Liquidity | 15 | `current assets / current liabilities` |
+| Profitability | 15 | `net income / revenue` |
+| Capital structure | 10 | `existing debt / total assets` |
+| Track record | 5 | years in business |
+| Revenue trend | 5 | `revenue / prior-year revenue − 1` |
+| Loan size | 5 | `requested loan / revenue` |
+
+**Risk grades:** Low 80–100 · Moderate 65–79 · Elevated 50–64 · High 35–49 · Very High 0–34.
+
+**Critical flags** — EBITDA ≤ 0, negative equity, coverage < 1.0×, current ratio < 0.8 — cap
+the grade at no better than High. **A cap is not a rejection.** The model cannot see a parent
+guarantee, security, or an owner injecting capital, so it refuses to call the case low risk
+and leaves the decision to a person. The score itself is untouched.
+
+**Four ratios are shown but never scored** — Current Debt/EBITDA, ROA, ROE and EBITDA margin.
+ROA and ROE reuse the same net income already scored by net margin, so scoring them would
+count one year's profit three times; ROE also explodes as equity approaches zero.
+
+Engineering rationale for every one of these: [`docs/model-notes.md`](docs/model-notes.md).
+
+### What the model cannot see
+
+Stated plainly, because a scorecard honest about its blind spots is more usable than one that
+implies it has none:
+
+- **One set of thresholds across every industry** — the largest weakness. A 1.2 current ratio
+  is comfortable for a consultancy and tight for a manufacturer financing stock. v1.0 flatters
+  asset-light businesses and penalises working-capital-intensive ones.
+- Thresholds are **reasoned, not calibrated** on an observed default book.
+- **No DSCR** — no interest rate, no amortisation schedule for the requested loan.
+- No credit bureau data, no collateral or guarantees, no management assessment, no
+  macroeconomic model.
+- One year of **self-reported, unaudited** figures.
+- **No regulatory framework** — no IFRS 9 expected credit loss, no Basel rating system, no PD,
+  LGD or EAD.
+
+---
+
+## Architecture
+
+```
+src/
+  app/                          Pages. The folder path is the web address.
+    page.tsx                    Landing page                              /
+    apply/                      Four-step application                     /apply
+      actions.ts                Server action: validate, then store
+      submitted/[token]/        Confirmation with the reference number
+    status/[token]/             Applicant status: status only, no figures
+    analyst/                    Dashboard                                 /analyst
+      applications/[id]/        Borrower analysis + decision workflow
+        actions.ts              Server action: record a decision
+    methodology/                The published model                       /methodology
+  components/
+    layout/ landing/ apply/ analyst/ ui/
+  lib/
+    credit/                     ── THE CREDIT ENGINE (pure, no I/O) ──
+      scorecard.ts              v1.0 weights, bands, critical-flag rules
+      ratios.ts                 Ratio maths, every division guarded
+      data-quality.ts           Input-consistency checks, kept out of the score
+      engine.ts                 Scoring, flags, grade cap, explanations
+    analyst/                    Dashboard domain logic, kept out of components
+      scoring.ts                Stored row → engine, or "incomplete"
+      list.ts                   Table rows, KPI summary, risk distribution
+      filters.ts                Filtering and sorting, as pure functions
+      decision.ts               Decision validation
+    methodology/model.ts        Publishes the engine's config
+    applications/               Zod schema, options, statuses, repository
+    risk-grades.ts              Single source of truth for grades + disclaimer
+    sample/                     Nordwerk and the six-borrower demo portfolio
+scripts/seed-demo-data.ts       Seeds the demo portfolio. Not part of the site.
+supabase/
+  schema.sql                    The table. Run once in the SQL Editor.
+  migrations/                   One-off changes for a project that already exists
+docs/                           Demo script and model notes
+```
+
+**Three layers, each with one job.** The repository is the only code that knows the table's
+shape. `lib/credit/` is a pure function — no database, no network, no React, no clock, no
+randomness — so the landing page, the analyst screens and the test suite all get identical
+answers from it. The components render what they are handed and compute nothing.
 
 | Layer | Choice |
 |---|---|
 | Framework | Next.js (App Router) with TypeScript |
 | Styling | Tailwind CSS v4, components in the shadcn/ui pattern |
+| Validation | Zod |
 | Database | Supabase Postgres, reached only from the server |
 | Credit engine | Plain TypeScript, no dependencies, no AI |
 | Charts | Recharts |
 | Tests | Vitest (dev dependency only) |
-| Hosting | Vercel, deployed automatically from GitHub |
+| Hosting | Vercel, deployed from GitHub |
 
-## Project structure
+---
 
+## Security design
+
+- **The browser never talks to the database.** There is no login, so any Row Level Security
+  policy loose enough to let an anonymous applicant read their own application would also let
+  anyone read everyone's. RLS is therefore enabled with **no policies at all**, refusing every
+  public key, and the server holds the one key that bypasses it.
+- **The secret key is server-only, enforced by the build.** `lib/supabase/server.ts` is marked
+  `server-only`; if any file that reaches the browser imports it, the build **fails**. There
+  is deliberately **no publishable key** anywhere in the project.
+- **Table grants are in version control**, not a dashboard toggle: `service_role` gets
+  `SELECT`, `INSERT`, `UPDATE` — never `DELETE` — and `anon`/`authenticated` are explicitly
+  revoked.
+- **Two identifiers with two jobs.** `reference` is short and quotable and grants nothing.
+  `access_token` is a random UUID and is the *only* way to open an applicant's status page.
+  Analyst routes are keyed on the internal `id`, and the token is excluded from the analyst
+  `SELECT` itself — not merely left unrendered. Tests assert this at both ends.
+- **The applicant's status page is built to be forwarded.** It exposes the reference, the
+  status and the analyst's message. The query selects four columns and none of them is
+  financial, so the figures are never fetched rather than fetched and not rendered.
+
+---
+
+## Running it locally
+
+Requires Node.js 20.9 or newer.
+
+```bash
+npm install
+cp .env.example .env.local        # then paste in your Supabase credentials
+npm run dev                       # http://localhost:3000
+npm test                          # the full test suite
+npm run build                     # check the production build before pushing
 ```
-src/
-  app/                    Pages. The folder path is the web address.
-    layout.tsx            Wraps every page: fonts, header, footer
-    globals.css           Design tokens (colours, fonts, radius)
-    page.tsx              Landing page  (/)
-    apply/                Loan application  (/apply)
-      actions.ts          Server action: validates, then stores a submission
-      submitted/[token]/  Confirmation screen with the reference number
-    status/[token]/       Applicant status page: status only, no figures
-    analyst/              Analyst dashboard  (/analyst)
-      applications/[id]/  Borrower analysis, keyed on the internal id
-    methodology/          Scoring methodology  (/methodology) Day 5
-  components/
-    layout/               Header, footer, logo, demo-mode switch
-    landing/              Landing page sections
-    apply/                The four-step form, its steps and the review screen
-    analyst/              Dashboard cards, chart, table and borrower-page sections
-    ui/                   Generic building blocks (button, form fields)
-    risk-badge.tsx        Grade badge used across the app
-    status-badge.tsx      Application status badge
-    risk-scale.tsx        The 0-100 risk scale
-  lib/
-    risk-grades.ts        Single source of truth for grades, disclaimer, model version
-    demo-mode.ts          Works out Applicant/Analyst view from the URL
-    format.ts             Euro and date formatting, shared by every screen
-    credit/               THE CREDIT ENGINE
-      index.ts            Public API: assess(input) -> assessment
-      types.ts            The engine's contract, in and out
-      scorecard.ts        v1.0 weights and thresholds. The only place they are written
-      ratios.ts           Ratio maths, with every division guarded
-      data-quality.ts     Input-consistency checks, kept out of the score
-      engine.ts           Scoring, critical flags, grade cap, explanations
-      __tests__/          233 tests, including the Nordwerk reference case
-    analyst/              Dashboard domain logic, kept out of the components
-      scoring.ts          Stored row -> credit engine, or "incomplete"
-      list.ts             Table rows, KPI summary, risk distribution
-      filters.ts          Filtering and sorting, as pure functions
-      ratio-meanings.ts   One plain sentence per ratio
-      __tests__/          77 tests
-    applications/
-      schema.ts           Zod schema: the definition of a valid application
-      options.ts          Dropdown choices, shared with the schema
-      status.ts           The five application statuses
-      reference.ts        Reference-number generation, URL-token checks
-      repository.ts       The only file that knows the table's shape
-      sample.ts           The "Fill with sample data" example
-    supabase/server.ts    Server-only database client
-    sample/
-      nordwerk.ts         The sample borrower's figures and its assessment
-      nordwerk-preview.ts The landing-page scorecard, derived from the engine
-supabase/
-  schema.sql              The table. Run once in the Supabase SQL Editor.
-  migrations/             One-off changes for a project that already exists
-  README.md               Manual setup steps
-vitest.config.mts         Test runner configuration
+
+The landing page, the application form and its validation all run **without a database**.
+Only submitting, and the screens that read an application back, need Supabase; without
+credentials those show a clear "not connected" panel rather than an error.
+
+### Supabase setup
+
+Full steps, with screenshots of where each setting lives, in
+**[`supabase/README.md`](supabase/README.md)**. In short:
+
+1. Create a Supabase project.
+2. SQL Editor → run all of [`supabase/schema.sql`](supabase/schema.sql). Confirm the
+   `applications` table shows an **RLS enabled** badge.
+3. **If the project already existed**, run the migrations in
+   [`supabase/migrations/`](supabase/migrations/) in order.
+4. Copy the Project URL and a **secret** key (Settings → API Keys → *Publishable and secret
+   API keys*).
+
+### Environment variables
+
+Two, both server-side. Neither is prefixed `NEXT_PUBLIC_`, which is what stops Next.js from
+inlining them into browser JavaScript. Template: [`.env.example`](.env.example).
+
+| Variable | What it is |
+|---|---|
+| `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
+| `SUPABASE_SECRET_KEY` | The `sb_secret_…` key. **Bypasses every database rule — treat it as a database password.** |
+
+`.env.local` is gitignored and must never be committed. No real credentials are in this
+repository.
+
+### Seeding the demo portfolio
+
+Six fictional borrowers spanning Low, Moderate, Elevated, High, a critical-flag cap, and one
+deliberately incomplete application.
+
+```bash
+npm run seed:demo                                                  # dry run — writes nothing
+node --env-file=.env.local scripts/seed-demo-data.ts --confirm     # actually writes
 ```
+
+Idempotent: each borrower has a fixed reference and the script upserts, so re-running leaves
+six rows rather than twelve — and **resets them**, including any decision recorded during a
+demo. The script lives outside `src/`, is never imported by the app, and has no route.
+
+**Their scores are not hard-coded.** The financial inputs were designed, run through the real
+engine, and the resulting grades observed; a test re-runs every one through `assess()` to prove
+the documented grade still matches the model.
+
+### Testing
+
+```bash
+npm test          # 361 tests
+npm run test:watch
+```
+
+Weighted deliberately towards the credit engine and the domain logic rather than the UI: the
+value of a test here is that it pins down a number an analyst will rely on. Coverage includes
+the reference case factor by factor, **every scoring-band boundary on both sides**, all grade
+boundaries, each critical flag in isolation, the grade cap, pathological inputs swept for
+`NaN`/`Infinity`, the decision rules, the access-token guarantee, and that the published
+methodology matches the engine's configuration.
+
+### Deployment
+
+Vercel, deployed automatically from `main`. Add `SUPABASE_URL` and `SUPABASE_SECRET_KEY` under
+Settings → Environment Variables (mark the key **Sensitive**) and redeploy — environment
+variables are baked in at build time.
+
+---
+
+## Screens
+
+| Route | Who | What |
+|---|---|---|
+| `/` | Anyone | Landing page with a live scorecard preview, computed by the engine |
+| `/apply` | Applicant | Four-step application |
+| `/apply/submitted/[token]` | Applicant | Reference number and status link |
+| `/status/[token]` | Applicant | Status and analyst message only |
+| `/analyst` | Analyst | Portfolio dashboard |
+| `/analyst/applications/[id]` | Analyst | Borrower analysis and decision workflow |
+| `/methodology` | Anyone | The published model |
+
+There is **no authentication**. A labelled demo-mode switch changes between the applicant and
+analyst views; the mode is derived from the URL. Adding a login would demonstrate nothing
+about credit decisioning, and is listed under post-MVP below.
+
+---
+
+## Post-MVP
+
+Deliberately **not** built, so the MVP stays finishable and honest about what it is:
+
+- Industry-specific scoring bands, and a real DSCR with rate and amortisation assumptions
+- Authentication and real Row Level Security policies
+- An AI layer that *explains* a finished assessment — never one that computes it
+- Document upload with OCR to extract figures from filed accounts
+- Stress testing ("what if revenue falls 20%?")
+- Credit bureau integration, collateral and guarantee modelling
+- PDF credit memo export, audit trail, admin panel
+
+---
+
+## Documentation
+
+- **[`/methodology`](https://credify-sme-credit-platform.vercel.app/methodology)** — the
+  published model, generated from the engine's configuration
+- **[`docs/model-notes.md`](docs/model-notes.md)** — engineering rationale for each modelling
+  decision
+- **[`docs/demo-script.md`](docs/demo-script.md)** — a four-minute walkthrough
+- **[`supabase/README.md`](supabase/README.md)** — database setup and migrations
+- **Decision log** below — why the project is built the way it is, day by day
 
 ## Decision log
 
@@ -289,6 +512,39 @@ vitest.config.mts         Test runner configuration
   submission has it) but *optional to the engine* (older rows are unaffected). Treating it
   as required in both places would have stranded every pre-cash row as unscoreable for no
   gain in the analysis.
+
+**Day 5 — decisions, methodology and polish**
+
+- **The analyst decides; the model cannot.** The decision action takes an action and a
+  message and nothing else. It never loads the assessment, so there is no path by which a
+  score, a grade or a critical flag could influence what is recorded. A test asserts the same
+  decision is valid for a 78-point borrower and a flagged one, and that recording a decision
+  leaves the calculated score byte-for-byte identical.
+- **Two steps to a decision, not three.** Approve and Decline are irreversible from the
+  applicant's point of view — they are told immediately — so each needs a confirmation that
+  names the company and shows exactly what the applicant will read. A third screen would be
+  theatre, and the workflow has to stay quick to demonstrate.
+- **Request information and Decline require a message; Approve does not.** Telling someone
+  "no", or asking for more information without saying what, leaves them nothing to act on.
+  "Yes" explains itself. An omitted optional message is stored as `null`, not `""`, so the
+  status page can simply test for a message.
+- **The methodology page is generated from the engine's configuration.** Every band, weight,
+  grade range and flag threshold is read from `lib/credit/`, and the critical-flag thresholds
+  were moved out of `engine.ts` into the scorecard config so both the engine and the page read
+  one source. A model whose published explanation has quietly drifted from its implementation
+  is worse than one with no explanation, because people keep deciding against a document that
+  stopped being true.
+- **The demo portfolio's grades are observed, not chosen.** Financial inputs were designed,
+  run through the real engine, and the resulting grades recorded in a comment. A test re-runs
+  every borrower through `assess()` and fails if the comment no longer matches — so nobody can
+  quietly tune a demo company to look good on the dashboard.
+- **The seed script is a dry run by default.** It upserts on a fixed reference, which makes it
+  idempotent and also means re-running resets those rows, including any decision recorded
+  mid-demo. `--confirm` is required to write, and the dry run prints exactly what would change.
+- **Limitations are published, not buried.** The methodology page ends with what the model
+  cannot see — industry differences, no bureau data, no collateral, no DSCR, no regulatory
+  framework. An analyst who knows the model has no view of security will go and look at the
+  security, which makes the model more useful, not less.
 
 **Known limitations of scorecard v1.0**
 
