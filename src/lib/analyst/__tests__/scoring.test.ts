@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { findMissingInputs, scoreApplication, yearsInBusiness } from "../scoring";
-import { LEGACY_RECORD, NORDWERK_RECORD, NOW, recordWith } from "./fixtures";
+import { LEGACY_RECORD, NORDWERK_RECORD, NOW, PRE_CASH_RECORD, recordWith } from "./fixtures";
 
 /**
  * THE BRIDGE FROM A STORED ROW TO AN ASSESSMENT.
@@ -65,9 +65,86 @@ describe("Nordwerk through the analyst path", () => {
     expect(scoring.input.yearsInBusiness).toBe(12);
   });
 
-  it("does not pass a cash figure, because the form does not collect one", () => {
+  it("passes the reported cash figure through to the engine", () => {
     if (scoring.status !== "scored") throw new Error("expected a scored result");
-    expect(scoring.input.cashEur).toBeUndefined();
+    expect(scoring.input.cashEur).toBe(500_000);
+  });
+
+  it("still scores 78: cash is reported but never scored", () => {
+    if (scoring.status !== "scored") throw new Error("expected a scored result");
+    expect(scoring.assessment.score).toBe(78);
+    // Cash appears in no scored factor.
+    expect(scoring.assessment.factors.map((f) => f.id)).not.toContain("cash");
+    expect(scoring.assessment.dataQualityWarnings).toEqual([]);
+  });
+});
+
+/**
+ * THE TWO KINDS OF MISSING FIGURE.
+ *
+ * A null total-liabilities or equity stops an application being scored, because the engine
+ * genuinely needs them. A null CASH does not, because the scorecard never uses it. Getting
+ * this distinction wrong would strand every pre-cash row as unscoreable for no gain in the
+ * analysis, so it is pinned by its own tests.
+ */
+describe("rows submitted before cash was collected", () => {
+  const scoring = scoreApplication(PRE_CASH_RECORD, NOW);
+
+  it("still score in full", () => {
+    expect(scoring.status).toBe("scored");
+    if (scoring.status !== "scored") return;
+    expect(scoring.assessment.score).toBe(78);
+    expect(scoring.assessment.grade.id).toBe("moderate");
+  });
+
+  it("are not treated as incomplete", () => {
+    expect(findMissingInputs(PRE_CASH_RECORD)).toEqual([]);
+  });
+
+  it("pass a null through rather than a fabricated figure", () => {
+    if (scoring.status !== "scored") throw new Error("expected a scored result");
+    expect(scoring.input.cashEur).toBeNull();
+  });
+
+  it("simply do not run the cash check", () => {
+    if (scoring.status !== "scored") throw new Error("expected a scored result");
+    expect(scoring.assessment.dataQualityWarnings.map((w) => w.id)).not.toContain(
+      "cash-exceeds-current-assets",
+    );
+  });
+
+  it("do not throw", () => {
+    expect(() => scoreApplication(PRE_CASH_RECORD, NOW)).not.toThrow();
+  });
+});
+
+describe("the cash data-quality check", () => {
+  it("warns when cash exceeds current assets", () => {
+    // Cash is a component of current assets, so it cannot be larger than them.
+    const scoring = scoreApplication(recordWith({ cashEur: 2_000_000 }), NOW);
+    if (scoring.status !== "scored") throw new Error("expected a scored result");
+    expect(scoring.assessment.dataQualityWarnings.map((w) => w.id)).toContain("cash-exceeds-current-assets");
+  });
+
+  it("does not change the score when it fires", () => {
+    const warned = scoreApplication(recordWith({ cashEur: 2_000_000 }), NOW);
+    const clean = scoreApplication(NORDWERK_RECORD, NOW);
+    if (warned.status !== "scored" || clean.status !== "scored") throw new Error("expected scored results");
+    expect(warned.assessment.score).toBe(clean.assessment.score);
+    expect(warned.assessment.grade.id).toBe(clean.assessment.grade.id);
+  });
+
+  it("does not raise a critical flag", () => {
+    const scoring = scoreApplication(recordWith({ cashEur: 2_000_000 }), NOW);
+    if (scoring.status !== "scored") throw new Error("expected a scored result");
+    expect(scoring.assessment.criticalFlags).toEqual([]);
+    expect(scoring.assessment.gradeCapped).toBe(false);
+  });
+
+  it("stays quiet when cash sits inside current assets", () => {
+    const scoring = scoreApplication(recordWith({ cashEur: 1_400_000 }), NOW);
+    if (scoring.status !== "scored") throw new Error("expected a scored result");
+    expect(scoring.assessment.dataQualityWarnings).toEqual([]);
   });
 });
 
@@ -120,6 +197,11 @@ describe("other incomplete shapes are refused too", () => {
   it("an unusable founding year is a gap as well", () => {
     const scoring = scoreApplication(recordWith({ yearFounded: 0 }), NOW);
     expect(scoring.status).toBe("incomplete");
+  });
+
+  it("a missing CASH figure is not a gap: the scorecard never uses it", () => {
+    expect(findMissingInputs(recordWith({ cashEur: null }))).toEqual([]);
+    expect(scoreApplication(recordWith({ cashEur: null }), NOW).status).toBe("scored");
   });
 
   it("a missing PRIOR-YEAR revenue is not a gap: the engine scores it neutrally", () => {

@@ -127,7 +127,8 @@ const applicationFields = {
   purposeDescription: textField("Purpose description", 20, 1000),
 
   // --- Step 3: financial information ----------------------------------------------
-  // These eleven figures are exactly what the Day 3 scorecard needs, and nothing more.
+  // Eleven of these twelve figures feed the Day 3 scorecard. Cash is the exception: it
+  // is collected so the engine can check it against current assets, and is never scored.
   fiscalYear: numberField("Financial year", {
     min: CURRENT_YEAR - 5,
     max: CURRENT_YEAR,
@@ -144,6 +145,10 @@ const applicationFields = {
   existingDebtEur: numberField("Existing debt", { min: 0, max: MAX_MONEY, example: "1200000" }),
   totalAssetsEur: numberField("Total assets", { min: 1, max: MAX_MONEY, example: "3500000" }),
   currentAssetsEur: numberField("Current assets", { min: 0, max: MAX_MONEY, example: "1400000" }),
+  // Cash is a COMPONENT of current assets, not an addition to them. It earns no points: it
+  // exists so the engine can check that it sits inside current assets, and so an analyst can
+  // see how much of the liquidity position is actually cash rather than stock or receivables.
+  cashEur: numberField("Cash", { min: 0, max: MAX_MONEY, example: "500000" }),
   currentLiabilitiesEur: numberField("Current liabilities", { min: 0, max: MAX_MONEY, example: "900000" }),
   totalLiabilitiesEur: numberField("Total liabilities", { min: 0, max: MAX_MONEY, example: "2100000" }),
   // Equity may be negative: a business whose liabilities exceed its assets is exactly the
@@ -207,6 +212,7 @@ export const APPLICATION_STEPS = [
       "existingDebtEur",
       "totalAssetsEur",
       "currentAssetsEur",
+      "cashEur",
       "currentLiabilitiesEur",
       "totalLiabilitiesEur",
       "equityEur",
@@ -252,6 +258,10 @@ function checkFinancialConsistency(
     });
   }
 
+  // Cash above current assets is NOT enforced here either, for the same reason: the credit
+  // engine raises it as a data-quality warning so the analyst can query it, rather than the
+  // form refusing a submission over a figure that may simply have been read off the wrong line.
+  //
   // Assets = liabilities + equity is NOT enforced here, deliberately. A balance sheet that
   // is a few percent out is nearly always rounding or a figure taken from a different
   // statement, and blocking the whole application over it would be wrong. The credit engine
@@ -339,6 +349,7 @@ export const EMPTY_APPLICATION: ApplicationFormValues = {
   existingDebtEur: "",
   totalAssetsEur: "",
   currentAssetsEur: "",
+  cashEur: "",
   currentLiabilitiesEur: "",
   totalLiabilitiesEur: "",
   equityEur: "",

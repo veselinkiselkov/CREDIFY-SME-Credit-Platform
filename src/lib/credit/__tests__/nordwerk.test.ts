@@ -66,6 +66,13 @@ describe("Nordwerk Precision GmbH: the reference case", () => {
     expect(result.equityEur).toBe(NORDWERK_INPUT.equityEur);
   });
 
+  it("reports cash of EUR 500k without it affecting the score", () => {
+    expect(NORDWERK_INPUT.cashEur).toBe(500_000);
+    // Cash sits inside current assets (500k of 1.4M) and is scored by nothing.
+    expect(result.score).toBe(78);
+    expect(result.dataQualityWarnings).toEqual([]);
+  });
+
   it("has a balance sheet that balances, so raises no data-quality warning", () => {
     // 2.1M liabilities + 1.4M equity = 3.5M total assets
     expect(NORDWERK_INPUT.totalLiabilitiesEur + NORDWERK_INPUT.equityEur).toBe(NORDWERK_INPUT.totalAssetsEur);
@@ -137,6 +144,7 @@ describe("Nordwerk stays consistent across the app", () => {
     expect(n(SAMPLE_APPLICATION.totalAssetsEur)).toBe(NORDWERK_INPUT.totalAssetsEur);
     expect(n(SAMPLE_APPLICATION.currentAssetsEur)).toBe(NORDWERK_INPUT.currentAssetsEur);
     expect(n(SAMPLE_APPLICATION.currentLiabilitiesEur)).toBe(NORDWERK_INPUT.currentLiabilitiesEur);
+    expect(n(SAMPLE_APPLICATION.cashEur)).toBe(NORDWERK_INPUT.cashEur);
     expect(n(SAMPLE_APPLICATION.totalLiabilitiesEur)).toBe(NORDWERK_INPUT.totalLiabilitiesEur);
     expect(n(SAMPLE_APPLICATION.equityEur)).toBe(NORDWERK_INPUT.equityEur);
     expect(n(SAMPLE_APPLICATION.loanAmountEur)).toBe(NORDWERK_INPUT.loanAmountEur);

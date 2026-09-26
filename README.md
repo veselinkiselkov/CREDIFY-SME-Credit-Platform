@@ -75,13 +75,13 @@ src/
       ratios.ts           Ratio maths, with every division guarded
       data-quality.ts     Input-consistency checks, kept out of the score
       engine.ts           Scoring, critical flags, grade cap, explanations
-      __tests__/          230 tests, including the Nordwerk reference case
+      __tests__/          233 tests, including the Nordwerk reference case
     analyst/              Dashboard domain logic, kept out of the components
       scoring.ts          Stored row -> credit engine, or "incomplete"
       list.ts             Table rows, KPI summary, risk distribution
       filters.ts          Filtering and sorting, as pure functions
       ratio-meanings.ts   One plain sentence per ratio
-      __tests__/          67 tests
+      __tests__/          77 tests
     applications/
       schema.ts           Zod schema: the definition of a valid application
       options.ts          Dropdown choices, shared with the schema
@@ -277,6 +277,18 @@ vitest.config.mts         Test runner configuration
   its own header that none of it changes the score.
 - **Status is displayed, not editable.** Approving, rejecting and requesting information are
   Day 5. The page shows the current status and any message already sent, and says so.
+- **Cash is collected but never scored.** It is a *component* of current assets, so scoring
+  it as its own factor would count the same asset twice — the liquidity factor already
+  measures it through the current ratio. It is collected so the engine can check that cash
+  sits inside current assets, and so an analyst can see how much of a borrower's liquidity
+  is actual cash rather than stock and receivables.
+- **A missing cash figure is not the same kind of gap as a missing equity figure.** Total
+  liabilities and equity are inputs the scorecard genuinely needs, so a row without them
+  cannot be scored. Cash is not, so a row without it scores exactly as it would have —
+  only the cash check goes unrun. Cash is therefore *required on the form* (every new
+  submission has it) but *optional to the engine* (older rows are unaffected). Treating it
+  as required in both places would have stranded every pre-cash row as unscoreable for no
+  gain in the analysis.
 
 **Known limitations of scorecard v1.0**
 

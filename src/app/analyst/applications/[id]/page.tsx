@@ -64,13 +64,14 @@ function reportedFigures(record: ApplicationRecord): { profitAndLoss: Figure[]; 
       { label: "Shareholders' equity", value: money(record.equityEur) },
       { label: "Existing interest-bearing debt", value: money(record.existingDebtEur) },
       { label: "Current assets", value: money(record.currentAssetsEur) },
-      { label: "Current liabilities", value: money(record.currentLiabilitiesEur) },
       {
-        label: "Cash",
-        value: "—",
-        // Shown rather than silently omitted, so its absence is visible rather than assumed.
-        note: "Not collected by the application form",
+        label: "of which cash",
+        value: money(record.cashEur),
+        // Rows submitted before cash was collected show "Not reported" rather than a
+        // fabricated figure. Their score is unaffected: the scorecard never uses cash.
+        note: record.cashEur === null ? "Submitted before cash was collected" : undefined,
       },
+      { label: "Current liabilities", value: money(record.currentLiabilitiesEur) },
     ],
   };
 }

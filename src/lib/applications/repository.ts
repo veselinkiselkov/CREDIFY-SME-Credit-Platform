@@ -102,6 +102,7 @@ export async function insertApplication(input: ApplicationInput): Promise<Submit
         existing_debt_eur: input.existingDebtEur,
         total_assets_eur: input.totalAssetsEur,
         current_assets_eur: input.currentAssetsEur,
+        cash_eur: input.cashEur,
         current_liabilities_eur: input.currentLiabilitiesEur,
         total_liabilities_eur: input.totalLiabilitiesEur,
         equity_eur: input.equityEur,
@@ -227,6 +228,12 @@ export interface ApplicationRecord {
   existingDebtEur: number | null;
   totalAssetsEur: number | null;
   currentAssetsEur: number | null;
+  /**
+   * Null on any row submitted before cash was collected. That is NOT a gap that stops an
+   * application being scored: the scorecard never uses cash, so an older row still produces
+   * a full assessment - only the "cash exceeds current assets" check goes unrun.
+   */
+  cashEur: number | null;
   currentLiabilitiesEur: number | null;
   totalLiabilitiesEur: number | null;
   equityEur: number | null;
@@ -269,6 +276,7 @@ const ANALYST_COLUMNS = [
   "existing_debt_eur",
   "total_assets_eur",
   "current_assets_eur",
+  "cash_eur",
   "current_liabilities_eur",
   "total_liabilities_eur",
   "equity_eur",
@@ -325,6 +333,7 @@ function toRecord(row: Record<string, unknown>): ApplicationRecord {
     existingDebtEur: toNumber(row.existing_debt_eur),
     totalAssetsEur: toNumber(row.total_assets_eur),
     currentAssetsEur: toNumber(row.current_assets_eur),
+    cashEur: toNumber(row.cash_eur),
     currentLiabilitiesEur: toNumber(row.current_liabilities_eur),
     totalLiabilitiesEur: toNumber(row.total_liabilities_eur),
     equityEur: toNumber(row.equity_eur),

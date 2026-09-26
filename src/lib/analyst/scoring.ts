@@ -97,9 +97,14 @@ export function scoreApplication(record: ApplicationRecord, now: Date = new Date
     totalLiabilitiesEur: record.totalLiabilitiesEur as number,
     equityEur: record.equityEur as number,
     yearsInBusiness: yearsInBusiness(record.yearFounded, now),
-    // Cash is not collected by the application form, so it is not passed. The engine's
-    // "cash exceeds current assets" check simply does not run, which is the honest outcome:
-    // a figure that was never asked for must not be invented to satisfy a check.
+    // Cash is passed through as reported, including as null.
+    //
+    // It is deliberately NOT in REQUIRED_FIGURES above: the scorecard never uses cash, so a
+    // row without it still scores exactly the same. Only the engine's "cash exceeds current
+    // assets" check goes unrun, which is the honest outcome for a figure that was never
+    // asked for. Making cash required here would turn every pre-cash row unscoreable for no
+    // gain in the analysis.
+    cashEur: record.cashEur,
   };
 
   return { status: "scored", input, assessment: assess(input) };

@@ -132,6 +132,7 @@ export function ReviewStep({ values, onEditStep }: ReviewStepProps) {
           { label: "Existing debt", value: money(values.existingDebtEur) },
           { label: "Total assets", value: money(values.totalAssetsEur) },
           { label: "Current assets", value: money(values.currentAssetsEur) },
+          { label: "Cash", value: money(values.cashEur) },
           { label: "Current liabilities", value: money(values.currentLiabilitiesEur) },
           { label: "Total liabilities", value: money(values.totalLiabilitiesEur) },
           { label: "Shareholders' equity", value: money(values.equityEur) },

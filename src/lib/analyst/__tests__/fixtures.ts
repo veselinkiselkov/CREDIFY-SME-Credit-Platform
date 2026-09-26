@@ -46,6 +46,7 @@ export const NORDWERK_RECORD: ApplicationRecord = {
   existingDebtEur: 1_200_000,
   totalAssetsEur: 3_500_000,
   currentAssetsEur: 1_400_000,
+  cashEur: 500_000,
   currentLiabilitiesEur: 900_000,
   totalLiabilitiesEur: 2_100_000,
   equityEur: 1_400_000,
@@ -64,6 +65,22 @@ export const LEGACY_RECORD: ApplicationRecord = {
   companyName: "Altwerk Legacy GmbH",
   totalLiabilitiesEur: null,
   equityEur: null,
+  cashEur: null,
+};
+
+/**
+ * A row submitted after the balance-sheet migration but before cash was collected.
+ *
+ * This is the case that separates the two kinds of missing figure: it has everything the
+ * scorecard needs, so it must still score in full. Only the cash data-quality check goes
+ * unrun. Treating a null cash as a gap would strand these rows as unscoreable for no gain.
+ */
+export const PRE_CASH_RECORD: ApplicationRecord = {
+  ...NORDWERK_RECORD,
+  id: "33333333-3333-4333-8333-333333333333",
+  reference: "CR-2026-PRECSH",
+  companyName: "Vorbar Handels GmbH",
+  cashEur: null,
 };
 
 export function recordWith(overrides: Partial<ApplicationRecord>): ApplicationRecord {

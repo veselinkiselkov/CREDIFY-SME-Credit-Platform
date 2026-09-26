@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { riskDistribution, summarise, toListItem } from "../list";
-import { LEGACY_RECORD, NORDWERK_RECORD, NOW, recordWith } from "./fixtures";
+import { LEGACY_RECORD, NORDWERK_RECORD, NOW, PRE_CASH_RECORD, recordWith } from "./fixtures";
 
 /**
  * THE DASHBOARD'S DATA.
@@ -42,6 +42,14 @@ describe("projecting a record into a table row", () => {
 
   it("does not throw on a legacy row", () => {
     expect(() => toListItem(LEGACY_RECORD, NOW)).not.toThrow();
+  });
+
+  it("scores a pre-cash row normally: a null cash is not a gap", () => {
+    const item = toListItem(PRE_CASH_RECORD, NOW);
+    expect(item.scored).toBe(true);
+    expect(item.score).toBe(78);
+    expect(item.gradeId).toBe("moderate");
+    expect(item.missingCount).toBe(0);
   });
 
   it("reports a capped grade", () => {
