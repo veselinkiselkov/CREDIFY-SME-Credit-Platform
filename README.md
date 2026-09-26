@@ -36,6 +36,7 @@ Setting Supabase up takes about five minutes and is done by hand, once:
 | Styling | Tailwind CSS v4, components in the shadcn/ui pattern |
 | Database | Supabase Postgres, reached only from the server |
 | Credit engine | Plain TypeScript, no dependencies, no AI |
+| Charts | Recharts |
 | Tests | Vitest (dev dependency only) |
 | Hosting | Vercel, deployed automatically from GitHub |
 
@@ -51,12 +52,14 @@ src/
       actions.ts          Server action: validates, then stores a submission
       submitted/[token]/  Confirmation screen with the reference number
     status/[token]/       Applicant status page: status only, no figures
-    analyst/              Analyst dashboard  (/analyst)       Day 4
+    analyst/              Analyst dashboard  (/analyst)
+      applications/[id]/  Borrower analysis, keyed on the internal id
     methodology/          Scoring methodology  (/methodology) Day 5
   components/
     layout/               Header, footer, logo, demo-mode switch
     landing/              Landing page sections
     apply/                The four-step form, its steps and the review screen
+    analyst/              Dashboard cards, chart, table and borrower-page sections
     ui/                   Generic building blocks (button, form fields)
     risk-badge.tsx        Grade badge used across the app
     status-badge.tsx      Application status badge
@@ -73,6 +76,12 @@ src/
       data-quality.ts     Input-consistency checks, kept out of the score
       engine.ts           Scoring, critical flags, grade cap, explanations
       __tests__/          230 tests, including the Nordwerk reference case
+    analyst/              Dashboard domain logic, kept out of the components
+      scoring.ts          Stored row -> credit engine, or "incomplete"
+      list.ts             Table rows, KPI summary, risk distribution
+      filters.ts          Filtering and sorting, as pure functions
+      ratio-meanings.ts   One plain sentence per ratio
+      __tests__/          67 tests
     applications/
       schema.ts           Zod schema: the definition of a valid application
       options.ts          Dropdown choices, shared with the schema
@@ -225,6 +234,49 @@ vitest.config.mts         Test runner configuration
   were hand-calculated constants until Day 3. They are computed by `assess()` now, so the
   marketing page and the model cannot drift apart: change a threshold and either the preview
   moves with it or the Nordwerk test fails.
+
+**Day 4 — the analyst experience**
+
+- **The credit engine stays the single source of truth.** No analyst screen calculates a
+  ratio, a score, a grade or a sentence. `lib/analyst/scoring.ts` turns a stored row into a
+  `CreditInput`, calls `assess()`, and the components render what comes back. That is why
+  the landing page, the dashboard and the test suite can never disagree about Nordwerk:
+  there is one model and three views of it.
+- **The dashboard is server-rendered; only the table rows cross to the browser.** The page
+  reads the applications, scores them and computes the portfolio numbers on the server. What
+  is serialised into the page is an `AnalystListItem` per application — nine columns — not
+  the full accounts. Shipping every borrower's complete financials just to render a table
+  would put the whole book's figures into the page source. The borrower page is fully
+  server-rendered with no client component at all.
+- **Analyst routes are keyed on the internal `id`, never the applicant's `access_token`.**
+  Those are different things: the token is a *capability* that opens a borrower's private
+  status page for anyone holding the link, while the id grants nothing on its own. Routing
+  the analyst screens on the token would have put a working applicant key into every analyst
+  URL, browser history and screen-share. The token is excluded from the analyst `SELECT`
+  itself rather than merely left unrendered, and a test asserts that against the query.
+- **An application missing a required figure is not scored.** Rows submitted before total
+  liabilities and equity existed come back marked *Incomplete financial data*, naming exactly
+  which figures are missing, with the reported ones still shown. Nothing is derived,
+  defaulted to zero or estimated — deriving equity here to paper over the gap is precisely
+  what the Day 3 correction removed. A plausible-looking score built on absent data is far
+  more dangerous to an analyst than an obvious gap.
+- **Unscored applications are excluded from the average, not counted as zero.** Averaging a
+  missing figure in as a zero would drag the portfolio's apparent quality down for a reason
+  that has nothing to do with credit, so the KPI card states its own denominator. For the
+  same reason they are not a sixth bar on the risk chart: they have no grade.
+- **Nulls sort last, in both directions.** An application that cannot be scored is *unknown*,
+  not bad. Letting a null score sort as zero would plant unscoreable rows among the worst
+  credits, which is exactly the wrong reading.
+- **Filtering and sorting are pure functions in `lib/analyst/filters.ts`.** The table
+  component decides how a control looks; that file decides what "sort by score, worst first"
+  means. The interesting bugs in a dashboard live in the comparator, so that is what the
+  tests exercise — no DOM, no browser-testing framework.
+- **Critical flags, the narrative, and data quality are three separate blocks on the
+  borrower page**, because they answer three different questions: what caps the grade, what
+  explains the score, and what is wrong with the figures. The data-quality block states in
+  its own header that none of it changes the score.
+- **Status is displayed, not editable.** Approving, rejecting and requesting information are
+  Day 5. The page shows the current status and any message already sent, and says so.
 
 **Known limitations of scorecard v1.0**
 

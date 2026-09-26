@@ -172,3 +172,195 @@ export async function getApplicantStatus(accessToken: string): Promise<Applicant
     statusUpdatedAt: data.updated_at as string,
   };
 }
+
+// =======================================================================================
+// ANALYST QUERIES
+// =======================================================================================
+
+/**
+ * A full application row as the analyst screens see it.
+ *
+ * Note what is NOT here: `access_token`. That column is the applicant's private key to
+ * their own status page, and no analyst screen has any use for it. It is excluded from the
+ * SELECT below rather than merely left unrendered, so it cannot reach a component, a props
+ * payload or the browser even by accident.
+ *
+ * The money columns are typed `number | null` because PostgREST can return a Postgres
+ * `numeric` as either a JSON number or a string depending on its magnitude, and because
+ * rows created before the balance-sheet migration have NULL in the two newest columns.
+ * Both are handled by `toNumber` below rather than being assumed away.
+ */
+export interface ApplicationRecord {
+  id: string;
+  reference: string;
+  status: ApplicationStatus;
+  analystMessage: string | null;
+  submittedAt: string;
+  updatedAt: string;
+
+  // Company
+  companyName: string;
+  legalForm: string;
+  registrationNumber: string | null;
+  industry: string;
+  country: string;
+  yearFounded: number;
+  employees: number;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string | null;
+
+  // Loan request
+  loanAmountEur: number | null;
+  loanTermMonths: number;
+  loanPurpose: string;
+  purposeDescription: string;
+
+  // Financials. `totalLiabilitiesEur` and `equityEur` are null for rows submitted before
+  // those fields existed; the analyst screens treat such a row as unscoreable.
+  fiscalYear: number;
+  revenueEur: number | null;
+  revenuePriorYearEur: number | null;
+  ebitdaEur: number | null;
+  netIncomeEur: number | null;
+  interestExpenseEur: number | null;
+  existingDebtEur: number | null;
+  totalAssetsEur: number | null;
+  currentAssetsEur: number | null;
+  currentLiabilitiesEur: number | null;
+  totalLiabilitiesEur: number | null;
+  equityEur: number | null;
+}
+
+/**
+ * Every column an analyst screen may read - and deliberately not `access_token`.
+ *
+ * Written out in full rather than as `*`, for the same reason the applicant queries are:
+ * a SELECT that names its columns cannot start returning a new one just because somebody
+ * added it to the table.
+ */
+const ANALYST_COLUMNS = [
+  "id",
+  "reference",
+  "status",
+  "analyst_message",
+  "submitted_at",
+  "updated_at",
+  "company_name",
+  "legal_form",
+  "registration_number",
+  "industry",
+  "country",
+  "year_founded",
+  "employees",
+  "contact_name",
+  "contact_email",
+  "contact_phone",
+  "loan_amount_eur",
+  "loan_term_months",
+  "loan_purpose",
+  "purpose_description",
+  "fiscal_year",
+  "revenue_eur",
+  "revenue_prior_year_eur",
+  "ebitda_eur",
+  "net_income_eur",
+  "interest_expense_eur",
+  "existing_debt_eur",
+  "total_assets_eur",
+  "current_assets_eur",
+  "current_liabilities_eur",
+  "total_liabilities_eur",
+  "equity_eur",
+].join(", ");
+
+/**
+ * Coerces a Postgres `numeric` into a JavaScript number.
+ *
+ * PostgREST may hand back a numeric as a JSON number or as a string. Parsing defensively
+ * here means the rest of the app never has to care, and a value that will not parse becomes
+ * null - which the analyst screens surface as "incomplete" - rather than a NaN that would
+ * travel silently into the credit engine.
+ */
+function toNumber(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function toRecord(row: Record<string, unknown>): ApplicationRecord {
+  return {
+    id: row.id as string,
+    reference: row.reference as string,
+    status: isApplicationStatus(row.status) ? row.status : DEFAULT_STATUS,
+    analystMessage: (row.analyst_message as string | null) ?? null,
+    submittedAt: row.submitted_at as string,
+    updatedAt: row.updated_at as string,
+
+    companyName: row.company_name as string,
+    legalForm: row.legal_form as string,
+    registrationNumber: (row.registration_number as string | null) ?? null,
+    industry: row.industry as string,
+    country: row.country as string,
+    yearFounded: toNumber(row.year_founded) ?? 0,
+    employees: toNumber(row.employees) ?? 0,
+    contactName: row.contact_name as string,
+    contactEmail: row.contact_email as string,
+    contactPhone: (row.contact_phone as string | null) ?? null,
+
+    loanAmountEur: toNumber(row.loan_amount_eur),
+    loanTermMonths: toNumber(row.loan_term_months) ?? 0,
+    loanPurpose: row.loan_purpose as string,
+    purposeDescription: row.purpose_description as string,
+
+    fiscalYear: toNumber(row.fiscal_year) ?? 0,
+    revenueEur: toNumber(row.revenue_eur),
+    revenuePriorYearEur: toNumber(row.revenue_prior_year_eur),
+    ebitdaEur: toNumber(row.ebitda_eur),
+    netIncomeEur: toNumber(row.net_income_eur),
+    interestExpenseEur: toNumber(row.interest_expense_eur),
+    existingDebtEur: toNumber(row.existing_debt_eur),
+    totalAssetsEur: toNumber(row.total_assets_eur),
+    currentAssetsEur: toNumber(row.current_assets_eur),
+    currentLiabilitiesEur: toNumber(row.current_liabilities_eur),
+    totalLiabilitiesEur: toNumber(row.total_liabilities_eur),
+    equityEur: toNumber(row.equity_eur),
+  };
+}
+
+/** Every application, newest first. Used by the analyst dashboard. */
+export async function listApplicationsForAnalyst(): Promise<ApplicationRecord[]> {
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select(ANALYST_COLUMNS)
+    .order("submitted_at", { ascending: false });
+
+  if (error) throw new Error(`Could not load applications: ${error.message}`);
+  // supabase-js cannot infer a row type from a runtime column string, so the cast goes
+  // through `unknown`. toRecord validates and coerces every field it reads.
+  return (data ?? []).map((row) => toRecord(row as unknown as Record<string, unknown>));
+}
+
+/**
+ * One application by its internal id.
+ *
+ * The analyst route is keyed on `id`, the table's own primary key, NOT on `access_token`.
+ * Those are two different identifiers with two different jobs: the token is a capability
+ * that opens the applicant's status page for anyone holding the link, while the id is an
+ * internal reference that grants nothing on its own. Routing the analyst screens on the
+ * token would have put a working applicant-facing key into every analyst URL, browser
+ * history and screen-share.
+ */
+export async function getApplicationForAnalyst(id: string): Promise<ApplicationRecord | null> {
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase.from(TABLE).select(ANALYST_COLUMNS).eq("id", id).maybeSingle();
+
+  if (error) throw new Error(`Could not load the application: ${error.message}`);
+  return data ? toRecord(data as unknown as Record<string, unknown>) : null;
+}
