@@ -1,5 +1,5 @@
 import { formatEur } from "@/lib/format";
-import type { CreditInput, DataQualityWarning } from "./types";
+import type { CreditInput, DataQualityWarning, DataQualityWarningId } from "./types";
 
 /**
  * DATA-QUALITY CHECKS.
@@ -21,7 +21,55 @@ import type { CreditInput, DataQualityWarning } from "./types";
  */
 
 /** How far assets may drift from liabilities + equity before it is worth mentioning. */
-const BALANCE_SHEET_TOLERANCE = 0.02;
+export const BALANCE_SHEET_TOLERANCE = 0.02;
+
+/**
+ * What each check looks for, for the methodology page to publish.
+ *
+ * Declared beside the checks themselves so the published list and the implemented list
+ * cannot drift apart. A test asserts that every id here is one the engine can actually
+ * produce, and vice versa.
+ */
+export const DATA_QUALITY_CHECKS: readonly { id: DataQualityWarningId; label: string; description: string }[] = [
+  {
+    id: "balance-sheet-mismatch",
+    label: "Balance sheet does not balance",
+    description: `Total assets differ from liabilities plus equity by more than ${BALANCE_SHEET_TOLERANCE * 100}%. Usually a figure typed into the wrong box.`,
+  },
+  {
+    id: "current-liabilities-exceed-total-liabilities",
+    label: "Current liabilities exceed total liabilities",
+    description: "Current liabilities are a subset of total liabilities, so they cannot be larger.",
+  },
+  {
+    id: "cash-exceeds-current-assets",
+    label: "Cash exceeds current assets",
+    description: "Cash is a component of current assets, so it cannot be larger.",
+  },
+  {
+    id: "current-assets-exceed-total-assets",
+    label: "Current assets exceed total assets",
+    description: "Current assets are a subset of total assets, so they cannot be larger.",
+  },
+  {
+    id: "net-income-exceeds-ebitda",
+    label: "Net income is higher than EBITDA",
+    description:
+      "Interest, tax and depreciation normally reduce EBITDA on the way to net income. Possible with a one-off gain, but worth confirming.",
+  },
+  {
+    id: "debt-without-interest-expense",
+    label: "Debt reported with no interest expense",
+    description:
+      "Interest coverage is scored on the figures as given. Confirm the debt is genuinely interest-free rather than the figure being a typing error.",
+  },
+  {
+    id: "no-current-liabilities",
+    label: "No current liabilities reported",
+    description:
+      "Liquidity is scored on the basis that nothing falls due within the year. Most trading businesses carry at least trade payables.",
+  },
+];
 
 export function checkDataQuality(input: CreditInput): DataQualityWarning[] {
   const warnings: DataQualityWarning[] = [];

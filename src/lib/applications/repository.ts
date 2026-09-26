@@ -373,3 +373,32 @@ export async function getApplicationForAnalyst(id: string): Promise<ApplicationR
   if (error) throw new Error(`Could not load the application: ${error.message}`);
   return data ? toRecord(data as unknown as Record<string, unknown>) : null;
 }
+
+/**
+ * Records an analyst's decision: the status, and the message the applicant will read.
+ *
+ * Deliberately narrow. It cannot touch a financial column, so recording a decision can
+ * never change the figures an assessment was calculated from - re-open the borrower
+ * afterwards and the score is identical. The `updated_at` trigger moves on its own, which
+ * is what the applicant's status page shows as "last updated".
+ *
+ * Returns false when no row matched, so the caller can report a stale link rather than
+ * silently succeeding.
+ */
+export async function recordAnalystDecision(
+  id: string,
+  status: ApplicationStatus,
+  analystMessage: string | null,
+): Promise<boolean> {
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from(TABLE)
+    .update({ status, analyst_message: analystMessage })
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw new Error(`Could not record the decision: ${error.message}`);
+  return data !== null;
+}

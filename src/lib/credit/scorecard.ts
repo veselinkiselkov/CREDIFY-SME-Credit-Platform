@@ -1,5 +1,5 @@
 import { MODEL_VERSION } from "@/lib/risk-grades";
-import type { RatioResult, RatioStatus, ScoredRatioId } from "./types";
+import type { CriticalFlagId, RatioResult, RatioStatus, ScoredRatioId } from "./types";
 
 /**
  * SCORECARD v1.0 - THE ONLY PLACE WEIGHTS AND THRESHOLDS ARE WRITTEN DOWN.
@@ -328,4 +328,69 @@ export function bandFor(factor: FactorConfig, value: number): ScoreBand {
   );
   // The final band is unbounded, so a match is guaranteed; the fallback satisfies TypeScript.
   return match ?? factor.bands[factor.bands.length - 1];
+}
+
+// =======================================================================================
+// CRITICAL FLAGS
+// =======================================================================================
+
+/**
+ * The four conditions that cap the risk grade, and the thresholds they fire at.
+ *
+ * Declared here rather than inline in engine.ts so there is ONE place the numbers live.
+ * The engine reads them to decide, and the methodology page reads them to explain - so the
+ * published explanation of the model cannot drift away from the model.
+ *
+ * Each one says the same thing a different way: this business may not be able to pay,
+ * whatever the other seven factors add up to.
+ */
+export interface CriticalFlagRule {
+  id: CriticalFlagId;
+  label: string;
+  /** The number the rule fires at, where it has one. Null for the sign tests. */
+  threshold: number | null;
+  /** How the rule is written in the methodology table. */
+  condition: string;
+  /** Why a lender cares, in one sentence. */
+  rationale: string;
+}
+
+export const CRITICAL_FLAG_RULES: readonly CriticalFlagRule[] = [
+  {
+    id: "non-positive-ebitda",
+    label: "EBITDA is zero or negative",
+    threshold: 0,
+    condition: "EBITDA ≤ 0",
+    rationale:
+      "There are no operating earnings to service debt from, so every leverage and coverage measure loses its meaning.",
+  },
+  {
+    id: "negative-equity",
+    label: "Negative shareholders' equity",
+    threshold: 0,
+    condition: "Reported equity < 0",
+    rationale:
+      "Liabilities exceed assets: the owners' stake has been exhausted and lenders are funding the losses.",
+  },
+  {
+    id: "interest-coverage-below-1",
+    label: "Interest coverage below 1.0×",
+    threshold: 1.0,
+    condition: "EBITDA / interest expense < 1.0×",
+    rationale: "Operating earnings do not cover the interest already owed, before any new borrowing.",
+  },
+  {
+    id: "current-ratio-below-0-8",
+    label: "Current ratio below 0.8",
+    threshold: 0.8,
+    condition: "Current assets / current liabilities < 0.8",
+    rationale: "Short-term obligations substantially exceed short-term assets, so a cash squeeze is imminent.",
+  },
+];
+
+/** Looks a rule up by id, so the engine and the page cannot disagree about its threshold. */
+export function criticalFlagRule(id: CriticalFlagId): CriticalFlagRule {
+  const rule = CRITICAL_FLAG_RULES.find((r) => r.id === id);
+  if (!rule) throw new Error(`Unknown critical flag rule: ${id}`);
+  return rule;
 }

@@ -10,7 +10,18 @@
  */
 
 export { assess } from "./engine";
-export { SCORECARD, SCORECARD_VERSION, MAX_SCORE, bandFor, RISK_THRESHOLD, STRENGTH_THRESHOLD } from "./scorecard";
+export {
+  SCORECARD,
+  SCORECARD_VERSION,
+  MAX_SCORE,
+  bandFor,
+  criticalFlagRule,
+  CRITICAL_FLAG_RULES,
+  RISK_THRESHOLD,
+  STRENGTH_THRESHOLD,
+} from "./scorecard";
+export type { FactorConfig, ScoreBand, CriticalFlagRule } from "./scorecard";
+export { DATA_QUALITY_CHECKS, BALANCE_SHEET_TOLERANCE } from "./data-quality";
 export { NOT_MEANINGFUL } from "./ratios";
 export type {
   CreditInput,
