@@ -24,4 +24,5 @@ export type {
   DataQualityWarningId,
   ScoredRatioId,
   DisplayRatioId,
+  RatioId,
 } from "./types";

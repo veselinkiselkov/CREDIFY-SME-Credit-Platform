@@ -94,6 +94,18 @@ create table if not exists public.applications (
   current_assets_eur       numeric(14,2) not null check (current_assets_eur >= 0),
   current_liabilities_eur  numeric(14,2) not null check (current_liabilities_eur >= 0),
 
+  -- Cash is a COMPONENT of current assets, not an addition to them.
+  --
+  -- It is never scored. It is collected so the engine can check that it sits inside current
+  -- assets, and so an analyst can see how much of the liquidity position is actual cash
+  -- rather than stock or receivables.
+  --
+  -- Nullable, because the column was added after the table already held rows. Unlike total
+  -- liabilities and equity, a null here does NOT make an application unscoreable - the
+  -- scorecard does not use cash - so older rows still produce a full assessment. See
+  -- supabase/migrations/002_add_cash.sql.
+  cash_eur                 numeric(14,2) check (cash_eur >= 0),
+
   -- Total liabilities and equity are REPORTED, not derived.
   --
   -- An earlier version of the engine worked equity out as

@@ -49,6 +49,7 @@ export const SAMPLE_APPLICATION: ApplicationFormValues = {
   existingDebtEur: "1200000",
   totalAssetsEur: "3500000",
   currentAssetsEur: "1400000",
+  cashEur: "500000",
   currentLiabilitiesEur: "900000",
   totalLiabilitiesEur: "2100000",
   equityEur: "1400000",

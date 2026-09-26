@@ -47,6 +47,10 @@ export const NORDWERK_INPUT: CreditInput = {
   existingDebtEur: 1_200_000,
   totalAssetsEur: 3_500_000,
   currentAssetsEur: 1_400_000,
+  // Cash sits INSIDE current assets: 500k of the 1.4M is cash, the rest stock and
+  // receivables. It is reported for the data-quality check and is never scored, so adding
+  // it leaves the 78/100 result untouched.
+  cashEur: 500_000,
   currentLiabilitiesEur: 900_000,
   totalLiabilitiesEur: 2_100_000,
   equityEur: 1_400_000,

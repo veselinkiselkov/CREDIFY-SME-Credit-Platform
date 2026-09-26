@@ -254,6 +254,7 @@ export function FinancialsStep({ values, errors, onValueChange }: StepProps) {
         {money("existingDebtEur", "Existing interest-bearing debt", "1200000", "Excludes trade payables.")}
         {money("totalAssetsEur", "Total assets", "3500000", "Drives the capital-structure factor.")}
         {money("currentAssetsEur", "Current assets", "1400000", "Stock, receivables and cash.")}
+        {money("cashEur", "Cash and cash equivalents", "500000", "The part of current assets held as cash.")}
         {money("currentLiabilitiesEur", "Current liabilities", "900000", "Due within twelve months.")}
         {money("totalLiabilitiesEur", "Total liabilities", "2100000", "Everything owed, short and long term.")}
         {money(
